@@ -1,0 +1,50 @@
+version: 1
+artifactsConfig:
+  localDir: external-dependencies 
+  defaults:
+    remote: ara
+  artifacts:
+    - path: vcc/csp/hi
+      revision: v2210.1
+      subDir?: hi 
+    - path: ARTCP/HI_release/CSP
+      revision: 2137.1.0 
+      labels: node/hi #Optional
+      subDir?: CSP
+      qualifiers:
+        - pattern: NVIDIA_SW/HIA/*.hex #external-dependencies/CSP/HIA/*.hex
+          subDir?: HIA 
+        - pattern: NVIDIA_SW/HIA #external-dependencies/CSP/HIA/*.hex
+        - pattern: NVIDIA_SW/HIA #external-dependencies/CSP/HIA2/HIA/*.hex
+          subDir?: HIA2 
+        - pattern: NVIDIA_SW/buildInfo.json #external-dependencies/CSP/buildInfo.json
+    - path: vcc/csp/diagnostics
+      revision: 2210.1
+      labels: diagnostics
+      remote: other
+      qualifiers:
+        - pattern: objects.tar.gz|unpack
+          subDir: objects 
+        - pattern: headers.tar.gz|unpack 
+          subDir: headers
+sourcesConfig:
+  localDir: external-dependencies 
+  defaults:
+    remote: csp-gerrit
+  sources:
+    - path: playground/cynosure_a
+      labels: somelabel
+      remote: <override>
+      revision: v1.2.3
+      subDir: cynosure_a
+
+images-config:
+  defaults:
+    remote: ara-docker
+  images:
+    - repository: vcc/builds
+      labels: test
+      revision: 311.22.2
+      alias: builderImage
+      remote?: 
+  

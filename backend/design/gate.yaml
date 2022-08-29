@@ -1,0 +1,54 @@
+version: 1
+automation:
+  update:
+    defaultImage: imageX:10.22.33 #Optional
+    matchers:
+      - labels: src/common math 
+        defaultImage: imageX:10.22.33 #Optional
+        commands:
+          - image: imageX:10.22.33 #Optional
+            cmd: ./gradlew compile test=math [--publish]
+          - image: imageY:10.22.33
+            cmd: Run RIG tests
+        action: merge #[merge|publish|release]
+      - labels: docs 
+        action: merge
+      - labels: * 
+        cmd: shell-script
+        action: merge
+  promote:
+    replace: 
+      time: 0.3
+      limit: 3
+    commands:
+      - docker: imageX:10.22.33
+        cmd: compile QNX 
+      - docker: imageY:10.22.33
+        cmd: Run RIG tests
+    action: release
+source:
+  matchers:
+    - path: /src/main/server
+      label: src/server  
+    - path: /src/main/client
+      label: src/client
+    - path: /docs
+      label: docs
+    - path: /  
+
+
+version: 1
+change:
+  filters:
+    - tags: * 
+      cmd: shell-script
+      action: launch
+
+
+
+action = [merge|publish|release]
+
+
+
+
+

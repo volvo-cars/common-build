@@ -1,0 +1,9 @@
+repositories:
+  - csp-gerrit:playground/cynosure_a
+  - csp-gerrit:playground/cynosure_b
+  - csp-gerrit:playground/cynosure_c
+  - csp-gerrit:playground/cynosure_d
+  - csp-gerrit:playground/cb-diagnostics
+  
+
+  

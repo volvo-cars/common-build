@@ -1,0 +1,24 @@
+# The repository
+
+
+
+## Branches 
+
+Each commit is a split-point. 
+
+Releases are on a commit of a branch. (of course)
+
+The beat: Puts a current major on the head of main. `major:xx` => Cause major version switch on main.
+
+I
+2
+I
+I
+1----0----1----2 -> s1. (increasing quality for M1) - Pointing towards single scope excellence.
+I     \--  (emergency patch - will be targetted for dependencies if no 1.1)
+I      
+0
+
+main - tip of development
+
+

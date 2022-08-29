@@ -1,0 +1,44 @@
+services:
+  backend:
+    image: common-build-dev:latest
+    ports:
+      - "3000:3000"
+    volumes:
+      - ${CURRENT_DIR}/backend:/work
+      - logvolume01:/var/log
+      - /tmp:/cache
+    command: sleep infinity
+    environment:
+      VAULT_TOKEN: ${VAULT_TOKEN}
+      NODE_EXTRA_CA_CERTS: /usr/local/share/ca-certificates/VCC-Root-CA-G2.crt
+    links:
+      - redis
+    depends_on:
+      - redis
+    privileged: true
+    container_name: backend
+  frontend:
+    image: common-build-dev:latest
+    ports:
+      - "4000:3000"
+    volumes:
+      - ${CURRENT_DIR}/frontend:/work
+      - logvolume01:/var/log
+    command: sleep infinity
+    environment:
+      VAULT_TOKEN: ${VAULT_TOKEN}
+      NODE_EXTRA_CA_CERTS: /usr/local/share/ca-certificates/VCC-Root-CA-G2.crt
+    links:
+      - backend
+    depends_on:
+      - backend
+    privileged: true
+    container_name: frontend
+  redis:
+    image: redis:6.2-alpine
+    restart: always
+    ports:
+      - 6379:6379
+    container_name: redis
+volumes:
+  logvolume01: {}

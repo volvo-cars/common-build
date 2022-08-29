@@ -1,0 +1,5 @@
+images:
+  remote: artcsp-docker.ara-artifactory.volvocars.biz
+  items:
+    - name: vcc/common-build-backend
+    - name: vcc/common-build-frontend

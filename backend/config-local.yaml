@@ -1,0 +1,32 @@
+services:
+  sources:
+    - id: csp-gerrit
+      type: gerrit
+      ssh: csp-gerrit-ssh.volvocars.net
+      https: csp-gerrit.volvocars.biz
+    - id: csp-gerrit-qa
+      type: gerrit
+      ssh: csp-gerrit-qa.volvocars.net
+      https: csp-gerrit-qa.volvocars.net
+      cynosure: 10.41.100.20:29423
+  dockerRegistries:
+    - type: artifactory
+      host: artcsp-docker.ara-artifactory.volvocars.biz
+      artifactoryHost: ara-artifactory.volvocars.biz
+      registryRepository: artcsp-docker
+redis:
+  host: redis
+majors:
+  series:
+    - csp
+  source:
+    type: gerrit
+    id: csp-gerrit
+    path: ci/common-build-state
+engine:
+  concurrency: 1
+gitCache:
+  path: /cache/common-build-git-cache
+  committer:
+    name: artcspci
+    email: cld-DL-BSW_ART_CSP_CI_Support@grp.volvocars.com

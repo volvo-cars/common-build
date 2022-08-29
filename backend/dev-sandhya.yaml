@@ -1,0 +1,5 @@
+repositories:
+  - csp-gerrit-qa:csp/csp_config_parser
+  - csp-gerrit-qa:csp/sga/manifest
+  - csp-gerrit-qa:manifest
+  - csp-gerrit-qa:csp/products/vcu

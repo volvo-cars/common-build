@@ -1,0 +1,97 @@
+Full build
+# test
+# pack
+# test+pack
+
+# Requirement: FullBuild -> All artifacts published
+
+1. Merge with build -> test+pack: Main is releasable. Master has existing build.
+2. Merge without build -> test: Do merge. No exising build exists ofr master HEAD.
+3. Build -> testPack | pack:  Make sure a pack is created. Test if required.
+
+4. Release(requires pack):  Name a pack in Artifactory (puts version tag on git-sha + copies all artifacts)
+
+
+contextParams:
+  $sha: 123456789abcdef
+
+Input params: test:true, pack:boolean
+
+
+defaultImage: abc:1.2.3
+build:
+  commands:
+    - cmd: ./gradlew [all:compile] {test.lint:lint=all} {test.test:test=all} --debug
+    - cmd: $[test.rig:./runRig out/vbfs]
+      image: rigrunner:1.0.0
+    - cmd: ${pack:./gradlew packAll --debug} // Could be one-liner
+    - cmd: {pack:./runSign out/vbfs} // Dev sign. Can we resign higher up?
+      image: signrunner:1.0.0
+  matchers:
+    - label: docs
+      values: 
+        test: #Zero all test values. 
+    - label: dep
+      values: 
+        test.lint: 
+    - label: src/client
+      values: 
+        test.lint: lint=client 
+        test.test: test=client
+
+
+
+
+build:
+  commands:
+    - cmd: ./gradlew compileAll {test.lint:lintAll} {test.test:testAll} --debug
+    - cmd: {test:./gradlew compileAll lintAll testAll --debug}
+    - cmd: {test.rig:./runRig out/vbfs}
+      image: rigrunner:1.0.0
+    - cmd: {pack:./gradlew packAll --debug} // Could be one-liner
+    - cmd: {pack:./runSign out/vbfs} // Dev sign. Can we resign higher up?
+      image: signrunner:1.0.0
+
+
+defaultImage: abc:1.2.3
+build:
+  commands:
+    - cmd: ./gradlew compileAll lintAll testAll --debug
+    - cmd: ./runRig out/vbfs
+      image: rigrunner:1.0.0
+    - cmd: ./gradlew packAll --debug # Could be one-liner
+    - cmd: ./runSign out/vbf # Dev sign. Can we resign higher up?
+      image: signrunner:1.0.0
+
+testPack -> ./gradlew compileAll lintAll testAll packAll
+test -> ./gradlew compileAll lintAll testAll 
+pack -> ./gradlew compileAll packAll
+
+testPack(docs) -> ./gradlew compileAll packAll
+test(docs) -> ./gradlew compileAll
+pack(docs) -> ./gradlew compileAll packAll
+
+testPack(src/client) -> ./gradlew compileAll lint=client test=client packAll
+test(src/client) -> ./gradlew compileAll lint=client test=client
+pack(src/client) -> ./gradlew compileAll packAll
+
+
+
+
+Git hub config: (Not possible to ff -> new merge commit)
+
+Merge creates extra commit -> pack -> compileAll packAll
+
+UpdateConfig:
+  Mode: MergeAndRelease(testPack + release), MergeForRelease (testPack), MergeForRebuild (test)
+
+  
+
+
+
+
+
+
+
+
+

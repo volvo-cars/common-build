@@ -1,0 +1,21 @@
+version: 1
+artifacts:
+  - path: vcc/csp/hi 
+    remote: ara-docker
+    qualifiers:
+      - pattern: build/*.vbf   
+  - path: vcc/csp/diagnostics
+    remote: ara-docker
+    qualifiers:
+      - pattern: build/objects|pack
+        ref: objects
+      - pattern: build/headers|pack 
+        ref: headers
+    transitives: alias1 alias2 alias3
+images:
+  image:
+    - name: some-local-image-name
+      remote: ara-docker
+  
+
+
