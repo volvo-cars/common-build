@@ -6,6 +6,7 @@ import { Update, UpdateId } from "../../system/build-system"
 export interface RepositoryAccess {
     getFile(repository: RepositoryPath, path: string, ref: Refs.Ref): Promise<string | null>
     updateBranch(repository: RepositoryPath, ref: Refs.BranchRef, contents: LocalGitCommands.Content[]): Promise<void>
+    setValidBuild(repository: RepositoryPath, updateId: UpdateId, ref: Refs.ShaRef): Promise<void>
     rebase(repository: RepositoryPath, updateId: UpdateId): Promise<Refs.ShaRef | null>
     merge(repository: RepositoryPath, updateId: UpdateId): Promise<Refs.Branch>
     getBranchesAndTags(repository: RepositoryPath): Promise<(Refs.Branch | Refs.Tag)[]>

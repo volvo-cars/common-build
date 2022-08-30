@@ -10,6 +10,9 @@ import { Content } from "../repository-access";
 
 const logger = createLogger(loggerName(__filename))
 export class GitlabRepositoryAccess extends AbstractRepositoryAccess {
+    setValidBuild(repository: string, updateId: string, ref: Refs.ShaRef): Promise<void> {
+        return Promise.reject('Operation not implemented in GitLab access')
+    }
 
     constructor(private config: ServiceConfig.GitlabSourceService, localGitFactory: LocalGitFactory, vaultService: VaultService) {
         super(config.id, config.https, localGitFactory, vaultService)

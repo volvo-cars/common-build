@@ -95,10 +95,14 @@ export class BuildSystemImpl implements BuildSystem, QueueListener, JobExecutorL
                     //TODO: Check labels on RepositoryConfig to get the correct action.
                     const publications = <DependencyRef.ArtifactRef[]>(await this.publisherManager.publications(source, sha))
                     await this.publisherManager.addMetaData(source, sha, publications)
+                    const repositoryAccess = this.repositoryAcccessFactory.createAccess(source.id)
+                    if (ref.type === JobRefType.UPDATE) {
+                        await repositoryAccess.setValidBuild(source.id, ref.ref, sha)
+                    }
                     const action = repositoryConfig.buildAutomation.default
                     logger.debug(`Job successful action: ${action} (${source}/${ref.serialize()})`)
                     if (action === RepositoryConfig.Action.Merge || action === RepositoryConfig.Action.Release) {
-                        this.repositoryAcccessFactory.createAccess(source.id).merge(source.path, ref.ref)
+                        repositoryAccess.merge(source.path, ref.ref)
                             .then(async updatedBranch => {
                                 logger.info(`Merged ${source}/${ref.serialize()} ${sha}`)
                                 return this.updateQueue(source, ref, sha, QueueStatus.SUCCEESS).then(() => {

@@ -28,6 +28,10 @@ export class GerritRepositoryAccess extends AbstractRepositoryAccess {
         return this.createRequest(`a/${encodeReplace(path)}`, method, data)
     }
 
+    setValidBuild(repository: RepositoryPath, updateId: UpdateId, ref: Refs.ShaRef): Promise<void> {
+        return this.internalSetLabels(updateId, ref, { "Verified": 1 })
+    }
+
     async rebase(repository: RepositoryPath, updateId: UpdateId): Promise<Refs.ShaRef | null> {
         try {
             const update = await this.internalGetChange(updateId)
@@ -226,7 +230,7 @@ export class GerritRepositoryAccess extends AbstractRepositoryAccess {
 
     async internalSetLabels(updateId: UpdateId, revision: Refs.ShaRef, labels: StringTypedMap<number>): Promise<void> {
         return this.createGerritRequest(`changes/${updateId}/revisions/${revision.sha}/review`, HttpMethod.POST, {
-            message: "Auto-added by common-build",
+            message: "Added by common-build",
             labels: labels
         }).then(response => {
             if (response.status === 200) {
