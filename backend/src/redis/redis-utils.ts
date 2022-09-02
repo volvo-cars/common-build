@@ -16,6 +16,8 @@ export class RedisUtils {
             } else {
                 return Promise.resolve([])
             }
+        }).catch(e => {
+            return Promise.reject(new Error(`Redis TX error: ${e}`))
         })
     }
 }

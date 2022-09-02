@@ -3,6 +3,7 @@ import _, { random } from 'lodash';
 import { SimpleGit } from "simple-git";
 import { Refs } from "../domain-model/refs";
 import { createLogger, loggerName } from "../logging/logging-factory";
+import { Update } from '../system/build-system';
 import { GitOutputParser } from "./git-output-parsers";
 import { GitFunction, GitOpContext } from "./local-git-factory";
 
@@ -33,6 +34,16 @@ export namespace LocalGitCommands {
                 return content
             }).catch(e => {
                 return null
+            })
+        }
+    }
+
+    export const fetchUpdate = (update: Update): GitFunction<string | null> => {
+        return (git: SimpleGit, context: GitOpContext) => {
+            const ref = `${update.changeNumber.toString().slice(-2)}/${update.changeNumber}`
+            logger.info(`Executing fetch refs/changes/${ref}/*`)
+            return git.raw(["fetch", "origin", `refs/changes/${ref}/*:refs/remotes/origin/changes/${ref}/*`, '--no-tags']).then(result => {
+                return ""
             })
         }
     }

@@ -6,7 +6,7 @@ import { VaultService } from '../../vault/vault-service'
 import { ArtifactoryDockerRegistryImpl, DockerRegistry } from "./artifactory-docker-registry"
 
 export interface ArtifactoryDockerRegistryFactory {
-    get(id: DependencyRef.ImageRemote): DockerRegistry
+    get(id: DependencyRef.ImageRemote): DockerRegistry | undefined
 }
 
 const logger = createLogger(loggerName(__filename))
@@ -17,7 +17,7 @@ export class ArtifactoryDockerRegistryFactoryImpl implements ArtifactoryDockerRe
         this.cache = new Map<DependencyRef.ImageRemote, DockerRegistry>()
     }
 
-    get(remote: DependencyRef.ImageRemote): DockerRegistry {
+    get(remote: DependencyRef.ImageRemote): DockerRegistry | undefined {
         let existing = this.cache.get(remote)
         if (existing) {
             return existing
@@ -34,8 +34,8 @@ export class ArtifactoryDockerRegistryFactoryImpl implements ArtifactoryDockerRe
                 throw new Error(`Unknown implementation for DockerRegistry config: ${registryConfig.constructor.name}`)
             }
         } else {
-            console.log(`Can not find registry: ${remote} in ${this.configs}`)
-            throw new Error(`No docker-registry configuration found for docker host ${remote} in configs ${this.configs.join(",")}`)
+            logger.warn(`Could not find registry: ${remote} in ${this.configs}`)
+            return undefined
         }
 
     }

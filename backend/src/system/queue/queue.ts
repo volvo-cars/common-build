@@ -13,6 +13,7 @@ import { deserializeQueueValue, serializeQueueValue } from './queue-value-util';
 import { RedisUtils } from '../../redis/redis-utils';
 import { Refs } from '../../domain-model/refs';
 import { RepositorySource } from '../../domain-model/repository-model/repository-source';
+import Redis from 'ioredis';
 
 const logger = createLogger(loggerName(__filename))
 
@@ -107,14 +108,13 @@ export class QueueImpl {
             const existingState = current ? ActiveBuildState.deserialize(current) : null
             if (!existingState || existingState.sha.sha !== sha.sha) {
                 const buildState = BuildState.create(QueueStatus.QUEUED, this.time.get())
-                logger.info(`Adding for processing ${source.id}/${source.path}/${sha} ${ref.serialize()} to ${processingQueueName}`)
-                await client.multi()
+                logger.info(`Adding for processing ${source}/${sha} ${ref.serialize()} to ${processingQueueName}`)
+                await RedisUtils.executeMulti(client.multi()
                     .set(this.calculateProcessRefTimeKey(source, ref), this.time.get(), "EX", QueueImpl.refTimeTTL) // Store time for update. Used to add new priority among queues.
                     .zadd(QueueImpl.scheduledQueues, "NX", this.time.get(), processingQueueName) // Only add if not existing yet / preserve first entry's prio by time.
                     .zadd(processingQueueName, this.time.get(), serializeQueueValue(source, ref))
                     .set(currentKey, ActiveBuildState.create(sha, buildState, targetBranchName).serialize())
-                    .exec()
-
+                )
                 if (existingState) {
                     const status = existingState.buildState.current().status
                     this.queueListener.onQueueUpdated(source, ref, existingState.sha, existingState.buildState.push(status === QueueStatus.QUEUED ? QueueStatus.CANCELLED : QueueStatus.ABORTED, this.time.get()))
@@ -139,13 +139,12 @@ export class QueueImpl {
     private async start(maxCount: number): Promise<void> {
         return this.redis.get().then(async (client) => {
             const intermediateSetName = "temp-actives-without-inactives"
-            //Change to RedisUtils.execMulti (Everywhere)
-            const topProcessingQueues = _.filter(<string[]>_.nth(_.map((await client.multi()
+
+            const topProcessingQueues = (await RedisUtils.executeMulti(client.multi()
                 .zdiffstore(intermediateSetName, 2, QueueImpl.scheduledQueues, QueueImpl.inactiveQueues)
                 .zpopmin(intermediateSetName, maxCount)
                 .del(intermediateSetName)
-                .exec()), entry => { return _.nth(entry, 1) }), 1), (__, index) => { return index % 2 === 0 })
-
+            ))[1] as string[]
             if (topProcessingQueues.length) {
                 logger.debug(`Processing queues: ${topProcessingQueues.join(",")}`)
 
@@ -163,7 +162,7 @@ export class QueueImpl {
                         if (currentValue) {
                             const currentState = ActiveBuildState.deserialize(currentValue)
                             if (currentState.buildState.current().status === QueueStatus.QUEUED) {
-                                logger.debug(`Starting: Queue:${processingQueueName} ${ref.serialize()} ${currentState.sha}`)
+                                logger.debug(`Starting queue: ${processingQueueName} ${ref} ${currentState.sha}`)
                                 const newBuildState = currentState.buildState.push(QueueStatus.STARTING, this.time.get())
                                 const newActiveState = ActiveBuildState.create(currentState.sha, newBuildState, currentState.targetBranch)
                                 await client.multi()

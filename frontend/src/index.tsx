@@ -2,7 +2,6 @@ import React from 'react';
 import 'reflect-metadata'
 import ReactDOM from 'react-dom/client';
 import './index.css';
-import reportWebVitals from './reportWebVitals';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import { BrowserRouter } from 'react-router-dom';
 import { App } from './app';

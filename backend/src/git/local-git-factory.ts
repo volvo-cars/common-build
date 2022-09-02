@@ -8,6 +8,7 @@ import { RepositorySource } from "../domain-model/repository-model/repository-so
 import { ServiceConfig } from "../domain-model/system-config/service-config";
 import { createLogger, loggerName } from "../logging/logging-factory";
 import { RedisFactory } from "../redis/redis-factory";
+import { Update } from '../system/build-system';
 import { createExecutionSerializer } from "../system/execution-serializer";
 import { VaultService } from "../vault/vault-service";
 import { VaultUtils } from "../vault/vault-utils";
@@ -41,7 +42,6 @@ export class LocalGitFactoryImpl implements LocalGitFactory {
 
     constructor(private config: SystemConfig.GitCache, private sources: ServiceConfig.SourceService[], private vaultService: VaultService, private redisFactory: RedisFactory) { }
 
-
     execute<T1>(source: RepositorySource, cmd: GitFunction<T1>, loadMode: LocalGitLoadMode): Promise<T1> {
         const sourceConfig = this.sources.find(s => { return s.id === source.id })
         if (sourceConfig) {
@@ -64,6 +64,8 @@ export class LocalGitFactoryImpl implements LocalGitFactory {
                     let initialized = false
                     if (!fs.existsSync(repositoryPath)) {
                         fs.mkdirSync(repositoryPath)
+                    } else if (!fs.existsSync(`${repositoryPath}/.git`)) {
+                        fsExtra.emptyDirSync(repositoryPath)
                     } else if (loadMode === LocalGitLoadMode.REFRESH) {
                         fsExtra.emptyDirSync(repositoryPath)
                     } else {
@@ -71,7 +73,7 @@ export class LocalGitFactoryImpl implements LocalGitFactory {
                     }
 
                     const configuredGitAndOrigin = async (): Promise<[SimpleGit, string]> => {
-                        const baseGit = simpleGit(repositoryPath, { binary: 'git', spawnOptions: { uid: 1000 } })
+                        const baseGit = simpleGit(repositoryPath, { binary: 'git' })
                         if (sourceConfig instanceof ServiceConfig.GerritSourceService) {
                             const [user, secret] = await getUserAndSecret(sourceConfig.ssh, "ssh")
                             const keyPath = `${os.homedir()}/ssh-key-${sourceConfig.id}`
@@ -79,7 +81,7 @@ export class LocalGitFactoryImpl implements LocalGitFactory {
                                 fs.writeFileSync(keyPath, `${secret}\n`, { mode: 0o600 })
                             }
                             return [
-                                baseGit.env("GIT_SSH_COMMAND", `ssh -i ${keyPath} -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no`),
+                                baseGit.env("GIT_SSH_COMMAND", `ssh -i ${keyPath} -o LogLevel=ERROR -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no`),
                                 `ssh://${user}@${sourceConfig.ssh}/${source.path}`
                             ]
                         } else if (sourceConfig instanceof ServiceConfig.GitlabSourceService) {
@@ -96,7 +98,7 @@ export class LocalGitFactoryImpl implements LocalGitFactory {
                         await git.init()
                             .addRemote("origin", origin)
                             .addConfig("remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
-                            .addConfig("remote.origin.fetch", "+refs/changes/*:refs/remotes/origin/changes/*", true)
+                            //  .addConfig("remote.origin.fetch", "+refs/changes/*:refs/remotes/origin/changes/*", true)
                             .addConfig("remote.origin.fetch", "+refs/meta/*:refs/remotes/origin/meta/*", true)
 
                             .addConfig("user.name", this.config.committer.name)
@@ -121,7 +123,7 @@ export class LocalGitFactoryImpl implements LocalGitFactory {
                     return Promise.reject(e)
                 }
             }
-            return this.executor.execute(`local-git-execution:${source}`, serializedCommand)
+            return this.executor.execute(`local-git-execution:${source.id}:${source.path}`, serializedCommand)
         } else {
             return Promise.reject(new Error(`Repository source: ${source.id} not configured.`))
         }

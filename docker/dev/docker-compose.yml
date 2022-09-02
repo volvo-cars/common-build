@@ -4,12 +4,15 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ${CURRENT_DIR}/backend:/work
+      - ${PWD}/backend:/work
       - logvolume01:/var/log
       - /tmp:/cache
     command: sleep infinity
     environment:
       VAULT_TOKEN: ${VAULT_TOKEN}
+      REDIS_HOST: redis
+      REDIS_PORT:
+      REDIS_PASSWORD:
     links:
       - redis
     depends_on:
@@ -20,7 +23,7 @@ services:
     ports:
       - "4000:3000"
     volumes:
-      - ${CURRENT_DIR}/frontend:/work
+      - ${PWD}/frontend:/work
       - logvolume01:/var/log
     command: sleep infinity
     environment:

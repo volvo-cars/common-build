@@ -83,7 +83,12 @@ export class PublisherManagerImpl implements PublisherManager {
 
     private publishImage(ref: DependencyRef.ImageRef, sha: Refs.ShaRef, version: Version): Promise<void> {
         logger.debug(`Publishing ${version.asString()} of ${ref.toString()} for ${sha}`)
-        return this.dockerRegistryFactory.get(ref.remote).copy(ref.repository, sha.sha, version.asString())
+        const dockerRegistry = this.dockerRegistryFactory.get(ref.remote)
+        if (dockerRegistry) {
+            return dockerRegistry.copy(ref.repository, sha.sha, version.asString())
+        } else {
+            return Promise.reject(new Error(`Can not publish docker-image to ${ref.remote}. Missing configuration.`))
+        }
     }
 
     publications(source: RepositorySource, sha: Refs.ShaRef): Promise<DependencyRef.Ref[]> {

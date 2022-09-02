@@ -7,4 +7,5 @@ repositories:
   - csp-gerrit:ci/common-build-agent
   - csp-gerrit:ci/common-build
   - csp-gerrit-qa:playground/test_cb
+  - csp-gerrit:ci/common-build-deploy-k8s
   

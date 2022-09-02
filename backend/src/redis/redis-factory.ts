@@ -1,12 +1,28 @@
 import Redis, { RedisOptions } from 'ioredis';
-import { SystemConfig } from '../config/system-config';
 
+export class RedisConfig {
+    constructor(public readonly host: string, public readonly user: string | undefined, public readonly password: string | undefined, public readonly port: number | undefined) { }
 
+    toString(): string {
+        return `Redis host:${this.host} user:${this.user || "undefined"} password:${this.password ? "*****" : "undefined"} user:${this.port || "undefined"}`
+    }
+}
 
-export class RedisFactory {
+export interface RedisFactory {
+    get(): Promise<Redis>
+
+    shutdown(): Promise<void>
+}
+
+export class RedisFactoryImpl implements RedisFactory {
     private client: Redis
-    constructor(options: RedisOptions) {
-        this.client = new Redis(options)
+    constructor(config: RedisConfig) {
+        this.client = new Redis(<RedisOptions>{
+            host: config.host,
+            username: config.user,
+            password: config.password,
+            port: config.port
+        })
     }
 
     async get(): Promise<Redis> {
@@ -18,14 +34,6 @@ export class RedisFactory {
     }
 }
 
-export const createFromConfig = (config: SystemConfig.Config): RedisFactory => {
-    return new RedisFactory(<RedisOptions>{
-        host: config.redis.host
-    })
-}
-
 export const createForTest = (): RedisFactory => {
-    return new RedisFactory(<RedisOptions>{
-        host: "redis"
-    })
+    return new RedisFactoryImpl(new RedisConfig("redis", undefined, undefined, undefined))
 }

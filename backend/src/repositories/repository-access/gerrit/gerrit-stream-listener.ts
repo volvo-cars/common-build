@@ -70,18 +70,19 @@ export class GerritStreamListener {
                                                 const changeNumber = change.changeNumber
 
                                                 const changeInfo = await this.changeCache.getChangeByChangeNumber(source, changeNumber)
-
+                                                console.dir(changeInfo, { depth: 0 })
                                                 if (changeInfo) {
-                                                    let update = <Update>{
-                                                        source: source,
-                                                        id: changeInfo.change_id,
-                                                        sha: Refs.ShaRef.create(event.refUpdate.newRev),
-                                                        target: changeInfo.branch,
-                                                        title: changeInfo.subject,
-                                                        labels: changeInfo.hashtags || []
-                                                    }
+                                                    let update = new Update(
+                                                        source,
+                                                        changeInfo.change_id,
+                                                        Refs.ShaRef.create(event.refUpdate.newRev),
+                                                        changeInfo.branch,
+                                                        changeInfo.subject,
+                                                        changeInfo.hashtags || [],
+                                                        changeNumber
+                                                    )
 
-                                                    logger.info(`Message: ${event.refUpdate.project} ${changeInfo.change_id} (${event.refUpdate.refName}) with ${event.refUpdate.newRev}`)
+                                                    logger.info(`Downloaded ${update} with ${event.refUpdate.newRev}`)
                                                     //console.log(JSON.stringify(event, null, 2))
                                                     receiver.onUpdate(update)
                                                 } else {

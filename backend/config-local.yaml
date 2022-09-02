@@ -26,7 +26,7 @@ majors:
 engine:
   concurrency: 1
 gitCache:
-  path: /cache/common-build-git-cache
+  path: /cache/common-build-git-cache-store
   committer:
     name: artcspci
     email: cld-DL-BSW_ART_CSP_CI_Support@grp.volvocars.com

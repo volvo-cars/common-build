@@ -15,7 +15,6 @@ import { RepositorySource } from './domain-model/repository-model/repository-sou
 import { ServiceConfig } from './domain-model/system-config/service-config'
 import { LocalGitFactoryImpl } from './git/local-git-factory'
 import { createLogger } from './logging/logging-factory'
-import { createFromConfig } from './redis/redis-factory'
 import { DependencyStoragImpl } from './repositories/dependency-manager/dependency-storage'
 import { MajorApplicationServiceImpl } from './repositories/majors/major-application-service'
 import { MajorsServiceImpl } from './repositories/majors/majors-service'
@@ -43,24 +42,26 @@ import { ensureString } from './utils/ensures'
 import { VaultOptions, VaultServiceImpl } from './vault/vault-service'
 import { VaultUtils } from './vault/vault-utils'
 import Koa from 'koa'
+import { RedisConfig, RedisFactoryImpl } from './redis/redis-factory'
+import { Env } from './utils/env'
 const logger = createLogger("main")
 logger.info("Starting CommonBuild server...")
 
 //Fix type safety from Yarn - should be inferred from options config
 
-const args: any = yargs
-    .options({
-        config: {
-            type: 'string',
-            demandOption: true,
-            description: "Config file"
-        },
-        port: {
-            type: 'number',
-            default: 3000,
-            description: "Server port"
-        }
-    }).argv
+const args: any = yargs.options({
+    config: {
+        type: 'string',
+        demandOption: true,
+        description: "Config file"
+    },
+    port: {
+        type: 'number',
+        default: 3000,
+        description: "Server port"
+    }
+
+}).argv
 
 process.on('uncaughtException', err => {
     logger.error('Uncaught Exception: %s', err.stack)
@@ -76,14 +77,23 @@ const vaultService = new VaultServiceImpl(new VaultOptions(
 createConfig(args.config, [new VaultValueSubstitutor(vaultService), new FileValueSubstitutor(), new EnvValueSubstitutor()]).then(async config => {
     console.log("Config:" + JSON.stringify(vaultService.mask(config), null, 2))
 
-    const redisFactory = createFromConfig(config)
+
+    const redisConfig = new RedisConfig(
+        Env.getRequiredString("REDIS_HOST"),
+        Env.getOptionalString("REDIS_USER"),
+        Env.getOptionalString("REDIS_PASSWORD"),
+        parseInt(Env.getOptionalString("REDIS_PORT") || "") || undefined
+    )
+    logger.info(`Creating Redis with config: ${redisConfig}`)
+    const redisFactory = new RedisFactoryImpl(redisConfig)
     const activeRepositories = createActiveRepositories(redisFactory)
     //DEV
     let preloadRepositories: RepositorySource[] | undefined
-    await redisFactory.get().then(client => { return client.flushall() })
+
 
     const cbDev = process.env["CB_DEV"]
     if (cbDev) {
+        await redisFactory.get().then(client => { return client.flushall() })
         const devFileName = `dev-${cbDev}.yaml`
         const devFile = fs.readFileSync(devFileName)
         console.log(`Processing dev-file: ${devFileName}`)
@@ -97,6 +107,7 @@ createConfig(args.config, [new VaultValueSubstitutor(vaultService), new FileValu
     //END DEV
 
     const localGitFactory = new LocalGitFactoryImpl(config.gitCache, config.services.sources, vaultService, redisFactory)
+
     const repositoryAccessFactory = new RepositoryAccessFactoryImpl(config.services.sources, localGitFactory, vaultService)
 
     const app = new Koa({ proxy: true })
@@ -111,6 +122,8 @@ createConfig(args.config, [new VaultValueSubstitutor(vaultService), new FileValu
         }
     })
     const repositoryFactory = new RepositoryFactoryImpl(redisFactory, repositoryAccessFactory)
+
+
     const cynosureApiConnectorFactory = createCynosureConnectorFactory(redisFactory, config.services.sources)
     const cynosureJobExecutor = new CynosureJobExecutor(cynosureApiConnectorFactory, redisFactory)
     const systemFilesAccess = new SystemFilesAccessImpl(repositoryAccessFactory)

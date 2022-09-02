@@ -20,6 +20,7 @@ export class CynosureJobExecutor implements JobExecutor {
     private listener: JobExecutorListener | null = null
     private static JOB_TTL_SECONDS = 24 * 60 * 60
     private static ACTIVITY_NOT_FOUND_MAX_POLL = 100
+    private static ACTIVITY_ERROR_MAX_POLL = 50
     private static ACTIVITY_POLL_INTERVALL_SECONDS = 5
     private createJobKey(source: RepositorySource, ref: JobRef, sha: Refs.ShaRef): string {
         return `cynosure-job-executor:${source.id}/${source.path}/${ref.serialize()}/${sha.sha}`
@@ -68,11 +69,13 @@ export class CynosureJobExecutor implements JobExecutor {
         this.redisFactory.get().then(async client => {
             let notFoundPollCount = 0
             const jobKey = this.createJobKey(source, ref, sha)
+            let pollFailureCount = 0
             const executePoll = () => {
                 setTimeout(() => {
                     client.get(jobKey).then(jobStatus => {
                         if (jobStatus === JobStatus.STARTED) {
                             connector.findActivity(productId, sha).then(activity => {
+                                pollFailureCount = 0
                                 if (activity) {
                                     logger.debug(`Activity POLL ${productId}/${sha}: ${activity.state}, ${activity.verdict}, ${activity.activityId}`)
                                     if (activity.state === CynosureProtocol.ActivityState.FINISHED) {
@@ -105,6 +108,14 @@ export class CynosureJobExecutor implements JobExecutor {
                             })
                         } else {
                             logger.debug(`Activity ${productId}/${sha} aborted. No more polling.`)
+                        }
+                    }).catch(e => {
+                        pollFailureCount++
+                        logger.warn(`Activity ${productId}/${sha} Poll error: ${e}`)
+                        if (pollFailureCount < CynosureJobExecutor.ACTIVITY_ERROR_MAX_POLL) {
+                            setTimeout(executePoll, CynosureJobExecutor.ACTIVITY_POLL_INTERVALL_SECONDS * 1000)
+                        } else {
+                            return Promise.reject(e)
                         }
                     })
                 }, CynosureJobExecutor.ACTIVITY_POLL_INTERVALL_SECONDS * 1000)

@@ -2,10 +2,13 @@ import { ArtifactoryFactory } from "../../artifact-storage/artifactory/artifacto
 import { ArtifactoryDockerRegistryFactory } from "../../artifact-storage/docker/artifactory-docker-registry-factory"
 import { DependencyRef } from "../../domain-model/system-config/dependency-ref"
 import { Version } from "../../domain-model/version"
+import { createLogger, loggerName } from "../../logging/logging-factory"
 import { RedisFactory } from "../../redis/redis-factory"
 import { RepositoryFactory } from "../repository/repository-factory"
 import { RepositoryModelReader } from "../repository/repository-model-reader"
 import { VersionContainer } from "./version-container"
+
+const logger = createLogger(loggerName(__filename))
 
 export interface DependencyLookupProvider {
     getVersion(ref: DependencyRef.Ref, major: number | undefined): Promise<Version | undefined>
@@ -60,17 +63,21 @@ export class DependencyLookupProviderImpl implements DependencyLookupProvider {
                 return model.getHighest(major)
             } else if (ref instanceof DependencyRef.ImageRef) {
                 const dockerRegistry = this.dockerRegistryFactory.get(ref.remote)
-                const tags = await dockerRegistry.getTags(ref.repository)
-                const model = new VersionContainer(tags.flatMap(tag => {
-                    const v = Version.parse(tag)
-                    if (v) {
-                        return [v]
-                    } else {
-                        return []
-                    }
-                }))
-                this.versionContainerCache.set(key, model)
-                return model.getHighest(major)
+                if (dockerRegistry) {
+                    const tags = await dockerRegistry.getTags(ref.repository)
+                    const model = new VersionContainer(tags.flatMap(tag => {
+                        const v = Version.parse(tag)
+                        if (v) {
+                            return [v]
+                        } else {
+                            return []
+                        }
+                    }))
+                    this.versionContainerCache.set(key, model)
+                    return model.getHighest(major)
+                } else {
+                    logger.warn(`Could not find DockerRegistry config for ${ref.remote}`)
+                }
             } else {
                 throw new Error(`Resolve dependency not implemented for ${ref.serialize()}`)
             }

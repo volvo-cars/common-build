@@ -6,7 +6,7 @@ export class MockLocalGitFactory implements LocalGitFactory {
         return Promise.resolve()
     }
     execute<T>(source: RepositorySource, f: GitFunction<T>, loadMode: LocalGitLoadMode): Promise<T> {
-        throw new Error("Method not implemented.");
+        return Promise.resolve({} as T)
     }
 
 }

@@ -1,6 +1,5 @@
 import { AxiosError, AxiosResponse } from "axios";
 import _ from 'lodash';
-import { string } from "yargs";
 import { Refs } from "../../../domain-model/refs";
 import { RepositoryPath, RepositorySource } from "../../../domain-model/repository-model/repository-source";
 import { ServiceConfig } from "../../../domain-model/system-config/service-config";
@@ -141,16 +140,15 @@ export class GerritRepositoryAccess extends AbstractRepositoryAccess {
         return this.createGerritRequest(`changes/?q=status:open+project:{${repository}}&o=CURRENT_REVISION`).then(response => {
             if (response.status === 200) {
                 const changes = <ChangeInfo[]>gerritJsonResponseDecode(response.data)
-                return changes.map(change => {
-                    return {
-                        source: new RepositorySource(this.config.id, repository),
-                        id: change.change_id,
-                        sha: Refs.ShaRef.create(change.current_revision),
-                        labels: change.hashtags || [],
-                        title: change.subject,
-                        target: change.branch
-                    }
-                })
+                return changes.map(change => new Update(
+                    new RepositorySource(this.config.id, repository),
+                    change.change_id,
+                    Refs.ShaRef.create(change.current_revision),
+                    change.branch,
+                    change.subject,
+                    change.hashtags || [],
+                    change._number
+                ))
             } else {
                 return Promise.reject(new Error(`Could not fetch updates from ${this.config.id}/${repository}: ${response.status}`))
             }
@@ -289,7 +287,8 @@ export type ChangeInfo = {
     change_id: string
     status: ChangeInfoStatus,
     labels?: Record<string, LabelInfo>,
-    hashtags?: string[]
+    hashtags?: string[],
+    _number: number
 }
 
 export enum ChangeInfoStatus {

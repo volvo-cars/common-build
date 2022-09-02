@@ -12,6 +12,9 @@ const logger = createLogger(loggerName(__filename))
 
 export class MockRepositoryAccessFactory implements RepositoryAccessFactory, RepositoryAccess {
     constructor(private readonly files: StringTypedMap<string>) { }
+    setValidBuild(repository: string, updateId: string, ref: Refs.ShaRef): Promise<void> {
+        return Promise.resolve()
+    }
     getImplementation<T extends RepositoryAccess>(id: string): T {
         throw new Error("Method not implemented.")
     }

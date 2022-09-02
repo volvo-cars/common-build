@@ -4,7 +4,7 @@ import { Refs } from "../domain-model/refs"
 import { RepositorySource } from '../domain-model/repository-model/repository-source'
 import { RepositoryConfig } from '../domain-model/system-config/repository-config'
 import { Version } from "../domain-model/version"
-import { LocalGitFactory } from "../git/local-git-factory"
+import { LocalGitFactory, LocalGitLoadMode } from "../git/local-git-factory"
 import { createLogger, loggerName } from "../logging/logging-factory"
 import { RedisFactory } from "../redis/redis-factory"
 import { PublisherManager } from "../repositories/publisher/publisher-manager"
@@ -23,6 +23,8 @@ import { ActiveRepositories } from "./queue/active-repositories"
 import { BuildState } from "./queue/build-state"
 import { buildQueue, Queue, QueueListener, QueueStatus } from "./queue/queue"
 import { Time } from "./time"
+import { LocalGitCommands } from '../git/local-git-commands'
+import { BuildConfig } from '../domain-model/system-config/build-config'
 
 export interface BuildSystem {
     onUpdate(update: Update): Promise<void>
@@ -36,13 +38,21 @@ export type UpdateLabel = string
 
 export type BranchName = string
 
-export type Update = {
-    source: RepositorySource,
-    id: UpdateId,
-    sha: Refs.ShaRef,
-    target: BranchName,
-    title: string,
-    labels: UpdateLabel[]
+export class Update {
+    constructor(
+        public readonly source: RepositorySource,
+        public readonly id: UpdateId,
+        public readonly sha: Refs.ShaRef,
+        public readonly target: BranchName,
+        public readonly title: string,
+        public readonly labels: UpdateLabel[],
+        public readonly changeNumber: number
+    ) { }
+
+    toString(): string {
+        return `Change ${this.id}/${this.changeNumber} (${this.source}) -> ${this.target} (${this.labels.join(", ")})`
+    }
+
 }
 
 export class MetaData { }
@@ -211,13 +221,14 @@ export class BuildSystemImpl implements BuildSystem, QueueListener, JobExecutorL
 
     async onUpdate(update: Update): Promise<void> {
         const cmd = async () => {
-            await this.localGitFactory.invalidate(update.source)
+            logger.debug(`Fetching ${update}`)
+            await this.localGitFactory.execute(update.source, LocalGitCommands.fetchUpdate(update), LocalGitLoadMode.CACHED)
             let buildYml = await this.systemFilesAccess.getBuildConfig(update.source, update.sha)
             if (buildYml) {
                 this.activeRepositories.addActiveRepositories(update.source)
                 return this.queue.upsert(update).then(_ => { return })
             } else {
-                logger.debug(`No gate.yml for ${update.source.id}:${update.source.path}:${update.sha}`)
+                logger.debug(`No ${BuildConfig.FILE_PATH} for ${update.source}:${update.sha}. No processing.`)
                 return Promise.resolve()
             }
         }
