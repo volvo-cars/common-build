@@ -27,17 +27,22 @@ export class GerritStreamListenerConfig {
 export class GerritStreamListener {
     private client: Client | null = null
     constructor(private readonly listenerConfig: GerritStreamListenerConfig, private readonly changeCache: ChangeCache, private readonly limitedRepositories: string[] | undefined) { }
+    private delayStart(reciever: UpdateReceiver, delaySec: number): void {
+        logger.debug(`Starting stream-listener ${this.listenerConfig.config.ssh} in ${delaySec} seconds...`)
+        setTimeout(() => {
+            this.start(reciever)
+        }, delaySec * 1000)
+    }
     start(receiver: UpdateReceiver): void {
-
         logger.info(`Starting gerrit listener on: ${this.listenerConfig.config.ssh}`)
+        if (this.client) {
+            this.client.end()
+        }
         const client = new Client()
 
         client.on('error', (e) => {
-            const wait = 5
-            logger.error(`Could not connect to ${this.listenerConfig.config.ssh}: ${e}. Reconnecting in ${wait} seconds...`)
-            setTimeout(() => {
-                this.start(receiver)
-            }, wait * 1000)
+            logger.error(`Could not connect to ${this.listenerConfig.config.ssh}: ${e}.`)
+            this.delayStart(receiver, 5)
         })
         client.on('ready', () => {
             logger.debug(`Connected stream listener to ${this.listenerConfig.config.id}: ${this.listenerConfig.config.ssh}`) // Is defined
@@ -47,7 +52,6 @@ export class GerritStreamListener {
                     stream
                         .on("close", () => {
                             logger.info(`Closing down stream-listener for ${this.listenerConfig.config.id}`)
-                            client.end()
                             this.start(receiver)
                         })
                         .on("data", (chunk: string) => {
@@ -104,11 +108,8 @@ export class GerritStreamListener {
                             })
                         })
                 } else {
-                    logger.error(`Could not connect to stream-listener ${this.listenerConfig.config.id}: ${err}`)
-                    setTimeout(() => {
-                        logger.info(`Trying to reconnect to stream-listener ${this.listenerConfig.config.id}.`)
-                        this.start(receiver)
-                    }, 5000)
+                    logger.error(`Could not execute command on ssh-channel. Stream-listener ${this.listenerConfig.config.id}: ${err}`)
+                    this.delayStart(receiver, 5)
                 }
             })
         }).connect(
