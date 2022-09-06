@@ -70,7 +70,6 @@ export class GerritStreamListener {
                                                 const changeNumber = change.changeNumber
 
                                                 const changeInfo = await this.changeCache.getChangeByChangeNumber(source, changeNumber)
-                                                console.dir(changeInfo, { depth: 0 })
                                                 if (changeInfo) {
                                                     let update = new Update(
                                                         source,

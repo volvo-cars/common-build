@@ -46,7 +46,7 @@ export class BuildYamlScannerProvider implements ScannerProvider {
                                         return Promise.resolve([])
                                     }
                                 } else {
-                                    console.warn(`Could not find FROM in docker-file: ${step.file}`)
+                                    logger.warn(`Could not find FROM in docker-file: ${step.file}`)
                                     return Promise.resolve([])
                                 }
                             } else {

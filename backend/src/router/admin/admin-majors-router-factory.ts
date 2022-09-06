@@ -29,9 +29,9 @@ export class AdminMajorsRouterFactory implements RouterFactory {
             await this.majorsService.addValue(request.value).then((value) => {
                 this.activeRepositories.activeRepositories().then(repositories => {
                     return this.majorApplicationService.applyMajors(request.value, repositories).then(result => {
-                        console.info(`Added value ${request.value.value} to ${request.value.id}. Processed ${repositories.length} repositories.`)
+                        logger.info(`Added value ${request.value.value} to ${request.value.id}. Processed ${repositories.length} repositories.`)
                         result.forEach(repositoryResult => {
-                            console.debug(`Processed ${repositoryResult.source} ${repositoryResult.action}`)
+                            logger.debug(`Processed ${repositoryResult.source} ${repositoryResult.action}`)
                         })
                     })
                 })
