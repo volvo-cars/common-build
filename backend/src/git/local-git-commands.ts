@@ -19,18 +19,29 @@ export namespace LocalGitCommands {
         constructor(public readonly path: string, public readonly data?: string) { }
     }
 
-    export const getBranchesAndTags = (): GitFunction<(Refs.Branch | Refs.Tag)[]> => {
-        return (git: SimpleGit, context: GitOpContext) => {
+    class GetBranchesAndTags implements GitFunction<(Refs.Branch | Refs.Tag)[]> {
+        public readonly description = this.constructor.name
+        execute(git: SimpleGit, context: GitOpContext): Promise<(Refs.Branch | Refs.Tag)[]> {
             return git.raw(['show-ref', '--dereference']).then(output => {
                 return GitOutputParser.parseReferences(output)
             })
         }
+        public static CMD = new GetBranchesAndTags()
     }
-    export const getFile = (path: string, ref: Refs.Ref): GitFunction<string | null> => {
-        return (git: SimpleGit, context: GitOpContext) => {
-            //const refName = ref.type === Refs.Type.BRANCH ? `origin/${ref.name}` : ref.name
 
-            return git.show(`${ref.originRef()}:${path}`).then(content => {
+    export const getBranchesAndTags = (): GitFunction<(Refs.Branch | Refs.Tag)[]> => {
+        return GetBranchesAndTags.CMD
+    }
+
+
+    class GetFile implements GitFunction<string | null> {
+        public readonly description
+        constructor(private path: string, private ref: Refs.Ref) {
+            this.description = `${this.constructor.name}: ${path} ${ref}`
+        }
+        execute(git: SimpleGit, context: GitOpContext): Promise<string | null> {
+            //const refName = ref.type === Refs.Type.BRANCH ? `origin/${ref.name}` : ref.name
+            return git.show(`${this.ref.originRef()}:${this.path}`).then(content => {
                 return content
             }).catch(e => {
                 return null
@@ -38,9 +49,32 @@ export namespace LocalGitCommands {
         }
     }
 
-    export const fetchUpdate = (update: Update): GitFunction<string | null> => {
-        return (git: SimpleGit, context: GitOpContext) => {
-            const ref = `${update.changeNumber.toString().slice(-2)}/${update.changeNumber}`
+    export const getFile = (path: string, ref: Refs.Ref): GitFunction<string | null> => {
+        return new GetFile(path, ref)
+    }
+
+    class FetchRemotes implements GitFunction<any> {
+        public readonly description = this.constructor.name
+        execute(git: SimpleGit, context: GitOpContext): Promise<any> {
+            return git.raw("gc", "--auto").then(() => {
+                return git.fetch({ '--force': null })
+            })
+        }
+        public static CMD = new FetchRemotes()
+    }
+
+    export const fetchRemotes = (): GitFunction<any> => {
+        return FetchRemotes.CMD
+    }
+
+    class FetchUpdate implements GitFunction<string | null> {
+        public readonly description
+        constructor(private update: Update) {
+            this.description = `${this.constructor.name}: ${update.changeNumber}/${update.id}`
+        }
+
+        execute(git: SimpleGit, context: GitOpContext): Promise<string | null> {
+            const ref = `${this.update.changeNumber.toString().slice(-2)}/${this.update.changeNumber}`
             logger.info(`Executing fetch refs/changes/${ref}/*`)
             return git.raw(["fetch", "origin", `refs/changes/${ref}/*:refs/remotes/origin/changes/${ref}/*`, '--no-tags']).then(result => {
                 return ""
@@ -48,15 +82,23 @@ export namespace LocalGitCommands {
         }
     }
 
-    export const updateBranch = (ref: Refs.BranchRef, contents: Content[], fromSha?: Refs.ShaRef): GitFunction<any> => {
-        return (git: SimpleGit, context: GitOpContext) => {
-            const tempLocalBranch = `${ref.name}_${(new Date().getTime())}_${random(0, 1000000000, false)}`
-            const checkoutPoint = fromSha ? fromSha.originRef() : ref.originRef()
+    export const fetchUpdate = (update: Update): GitFunction<string | null> => {
+        return new FetchUpdate(update)
+    }
+
+    class UpdateBranch implements GitFunction<any> {
+        public readonly description
+        constructor(private ref: Refs.BranchRef, private contents: Content[], private fromSha?: Refs.ShaRef) {
+            this.description = `${this.constructor.name}: ${ref}${fromSha ? ` from ${fromSha}` : ""} Content count:${contents.length}`
+        }
+        execute(git: SimpleGit, context: GitOpContext): Promise<any> {
+            const tempLocalBranch = `${this.ref.name}_${(new Date().getTime())}_${random(0, 1000000000, false)}`
+            const checkoutPoint = this.fromSha ? this.fromSha.originRef() : this.ref.originRef()
             return git.raw(["checkout", "-b", tempLocalBranch, checkoutPoint]).catch((e) => {
                 logger.info(`Could not checkout from ${checkoutPoint} (${e}). Checking out orphan.`)
                 return git.raw(["checkout", "--orphan", tempLocalBranch])
             }).then(() => {
-                return Promise.all(contents.map(content => {
+                return Promise.all(this.contents.map(content => {
                     const fullPath = `${context.baseDir}/${content.path}`
                     if (content.data === undefined) {
                         return new Promise<void>((resolve, reject) => {
@@ -96,18 +138,18 @@ export namespace LocalGitCommands {
                     }
                 }))
             }).then(() => {
-                logger.debug(`Writing to ${context.source}/${ref.name}: ${contents.map(c => { return c.path }).join(" ")}`)
-                contents.forEach(f => {
-                    console.log(f.data)
-                })
-                const pushRef = isSpecialNamespace(ref) ? `refs/${ref.name}` : `${ref.name}`
+                const pushRef = isSpecialNamespace(this.ref) ? `refs/${this.ref.name}` : `${this.ref.name}`
                 return git
-                    .commit(`CommonBuild: ${contents.map(c => { return c.path }).join(" ")}`)
+                    .commit(`CommonBuild: ${this.contents.map(c => { return c.path }).join(" ")}`)
                     .raw(['push', 'origin', `HEAD:${pushRef}`])
-                    .raw(["checkout", `${ref.originRef()}`])
+                    .raw(["checkout", `${this.ref.originRef()}`])
                     .deleteLocalBranch(tempLocalBranch, true)
             })
         }
+    }
+
+    export const updateBranch = (ref: Refs.BranchRef, contents: Content[], fromSha?: Refs.ShaRef): GitFunction<any> => {
+        return new UpdateBranch(ref, contents, fromSha)
     }
 }
 

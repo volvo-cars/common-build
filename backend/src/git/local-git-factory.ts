@@ -2,6 +2,7 @@ import fs from 'fs';
 import fsExtra from 'fs-extra';
 import _ from 'lodash';
 import os from 'os';
+import { resolve } from 'path';
 import simpleGit, { SimpleGit } from 'simple-git';
 import { SystemConfig } from "../config/system-config";
 import { RepositorySource } from "../domain-model/repository-model/repository-source";
@@ -12,6 +13,7 @@ import { Update } from '../system/build-system';
 import { createExecutionSerializer } from "../system/execution-serializer";
 import { VaultService } from "../vault/vault-service";
 import { VaultUtils } from "../vault/vault-utils";
+import { LocalGitCommands } from './local-git-commands';
 
 
 export enum LocalGitLoadMode {
@@ -32,11 +34,18 @@ export interface GitOpContext {
 
 const logger = createLogger(loggerName(__filename))
 
-export type GitFunction<T> = (git: SimpleGit, context: GitOpContext) => Promise<T>
+export interface GitFunction<T> {
+    description: string
+    execute(git: SimpleGit, context: GitOpContext): Promise<T>
+}
 
 export class LocalGitFactoryImpl implements LocalGitFactory {
 
     private static GIT_LOCAL_FRESH_TTL = 120 * 60
+
+    private static GIT_RETRY_COUNT = 4
+
+    private static GET_RETRY_TIMEOUT = 3
 
     private executor = createExecutionSerializer()
 
@@ -108,17 +117,45 @@ export class LocalGitFactoryImpl implements LocalGitFactory {
                     }
                     const redisClient = await this.redisFactory.get()
                     const sourceKey = this.getSourceKey(source)
+
+                    const executeCommand = <T>(cmd: GitFunction<T>, retryCount: number): Promise<T> => {
+                        const startTime = (new Date()).getTime()
+                        const secondsPassed = (): number => {
+                            return ((new Date()).getTime() - startTime) / 1000
+                        }
+                        return cmd.execute(git, { baseDir: repositoryPath, source: source })
+                            .then(result => {
+                                logger.debug(`Git command success - ${cmd.description} after ${secondsPassed()} seconds: ${source}.`)
+                                return result
+                            })
+                            .catch(e => {
+                                logger.warn(`Git command failure ${cmd.description} failure after ${secondsPassed()} seconds: ${e} on ${source}. Retry counts left: ${retryCount}`)
+                                if (retryCount > 0) {
+                                    const promise = new Promise<T>((resolve, reject) => {
+                                        setTimeout(() => {
+                                            return executeCommand(cmd, retryCount - 1)
+                                                .then(success => {
+                                                    resolve(success)
+                                                })
+                                                .catch(failure => {
+                                                    reject(failure)
+                                                })
+                                        }, LocalGitFactoryImpl.GET_RETRY_TIMEOUT * 1000)
+                                    })
+                                    return promise
+                                } else {
+                                    logger.warn(`Git command failure with no more retries(${LocalGitFactoryImpl.GIT_RETRY_COUNT}): ${e} on ${source}.`)
+                                    return Promise.reject(e)
+                                }
+                            })
+                    }
+
                     if (!initialized || loadMode === LocalGitLoadMode.FETCH || !(await redisClient.get(sourceKey))) {
-                        logger.debug(`Fetching (updating local Git-cache) for ${source}`)
-                        const start = (new Date()).getTime()
-                        await git.raw("gc", "--auto")
-                        await git.fetch({ '--force': null }).then((fetchResult) => {
-                            const stop = (new Date()).getTime()
-                            logger.debug(`Fetched ${repositoryPath} in ${Math.round((stop - start) / 1000)} seconds. Branches: ${fetchResult.branches.map(b => { return b.tracking })} Tag: ${fetchResult.branches.map(b => { return b.tracking })}`)
+                        await executeCommand(LocalGitCommands.fetchRemotes(), LocalGitFactoryImpl.GIT_RETRY_COUNT).then(() => {
                             return redisClient.set(sourceKey, "1", "EX", LocalGitFactoryImpl.GIT_LOCAL_FRESH_TTL)
                         })
                     }
-                    return cmd(git, { baseDir: repositoryPath, source: source })
+                    return executeCommand(cmd, LocalGitFactoryImpl.GIT_RETRY_COUNT)
                 } catch (e) {
                     return Promise.reject(e)
                 }
