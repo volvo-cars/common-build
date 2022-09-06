@@ -40,14 +40,20 @@ export class CynosureJobExecutor implements JobExecutor {
                                 logger.info(`Starting Cynosure Activity ${source}/${sha} ${ref.serialize()} -> ${productId} `)
                                 const jobStatus = await client.get(jobKey)
                                 if (jobStatus === JobStatus.STARTED) {
-                                    await cynosureApiConnector.startActivity(productId, sha)
-                                    logger.info(`Started Cynosure Activity ${source} ${ref.serialize()}:${sha} -> ${productId}`)
-                                    ensureDefined(this.listener).onJobStarted(source, ref, sha)
-                                    this.startPoll(source, productId, ref, sha, cynosureApiConnector)
+                                    return cynosureApiConnector.startActivity(productId, sha).then(() => {
+                                        logger.info(`Started Cynosure Activity ${source} ${ref.serialize()}:${sha} -> ${productId}`)
+                                        ensureDefined(this.listener).onJobStarted(source, ref, sha)
+                                        this.startPoll(source, productId, ref, sha, cynosureApiConnector)
+                                        return Promise.resolve()
+                                    }).catch((e) => {
+                                        logger.error(`Could not start activity ${source}/${sha}: ${e}`)
+                                        ensureDefined(this.listener).onJobError(source, ref, sha)
+                                        return Promise.resolve()
+                                    })
                                 } else {
                                     logger.info(`Skipped starting Cynosure Activity ${source} ${ref.serialize()}:${sha} -> ${productId}. Job aborted.`)
+                                    return Promise.resolve()
                                 }
-                                return Promise.resolve()
                             } else {
                                 return Promise.reject(new Error(`${source} is not configured in Cynosure`))
                             }
