@@ -8,7 +8,7 @@
     "build": "rimraf ./build && tsc",
     "start": "npm run build && node build/index.js",
     "start:prod": "node dist/index.js --config config-local.yaml",
-    "test": "jest --coverage",
+    "test": "jest --coverage --detectOpenHandles",
     "test:watch": "jest --watch"
   },
   "repository": {

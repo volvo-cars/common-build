@@ -1,167 +1,294 @@
 import { Refs } from "../../domain-model/refs";
 import { RepositorySource } from "../../domain-model/repository-model/repository-source";
 import { createLogger, loggerName } from "../../logging/logging-factory";
-import { RedisFactory } from "../../redis/redis-factory";
 import { JobExecutor, JobExecutorListener } from "../../system/job-executor/job-executor";
 import { JobRef } from "../../system/job-executor/job-ref";
-import { ensureDefined } from "../../utils/ensures";
-import { CynosureApiConnector, CynosureProtocol } from "../cynosure-api-connector/cynosure-api-connector";
+import { CynosureProtocol } from "../cynosure-api-connector/cynosure-api-connector";
 import { CynosureApiConnectorFactory } from "../cynosure-api-connector/cynosure-api-connector-factory";
+import { TaskQueue } from "../../task-queue/task-queue";
+import { Duration, Time } from "../../task-queue/time";
+import _ from 'lodash'
 
 const logger = createLogger(loggerName(__filename))
 
-enum JobStatus {
-    STARTED = "started",
-    ABORTED = "aborted"
+class JobKey {
+    constructor(public readonly source: RepositorySource, public readonly ref: JobRef, public readonly sha: Refs.ShaRef) { }
+    private static DELIMITER = "|"
+    serialize(): string {
+        return `${this.source.asString()}${JobKey.DELIMITER}${this.ref.serialize()}${JobKey.DELIMITER}${this.sha.sha}`
+    }
+    toString(): string {
+        return `Job: ${this.source} ${this.ref} ${this.sha.sha}`
+    }
+    static deserialize(serialized: string): JobKey {
+        const [source, ref, sha] = serialized.split(JobKey.DELIMITER)
+        return new JobKey(RepositorySource.createFromString(source), JobRef.deserialize(ref), Refs.ShaRef.create(sha))
+    }
+}
+
+
+
+const Constants = {
+    QUEUE_MAX_FAILURES: 10,
+    QUEUE_RESCHEDULE_DURATION: Duration.fromSeconds(10),
+    STARTING_MAX_FAILURES: 50,
+    STARTING_RESCHEDULE_DURATION: Duration.fromSeconds(10),
+
+    STARTED_MAX_FAILURES: 5,
+    STARTED_POLL_DURATION: Duration.fromSeconds(11)
 }
 
 export class CynosureJobExecutor implements JobExecutor {
-    constructor(private cynosureApiConnectorFactory: CynosureApiConnectorFactory, private redisFactory: RedisFactory) { }
+
+    private processTimer: ReturnType<typeof setTimeout> | undefined
+
+    constructor(private cynosureApiConnectorFactory: CynosureApiConnectorFactory, private taskQueue: TaskQueue.Service) { }
+
     private listener: JobExecutorListener | null = null
-    private static JOB_TTL_SECONDS = 24 * 60 * 60
-    private static ACTIVITY_NOT_FOUND_MAX_POLL = 100
-    private static ACTIVITY_ERROR_MAX_POLL = 50
-    private static ACTIVITY_POLL_INTERVALL_SECONDS = 5
-    private createJobKey(source: RepositorySource, ref: JobRef, sha: Refs.ShaRef): string {
-        return `cynosure-job-executor:${source.id}/${source.path}/${ref.serialize()}/${sha.sha}`
+
+    private static DURATION_NEXT_JOB_POLL = Duration.fromSeconds(10)
+    private static DURATION_SLEEP_POLL = Duration.fromSeconds(15)
+
+    private scheduleProcess(wait: Duration) {
+        clearTimeout(this.processTimer)
+        this.processTimer = setTimeout(() => {
+            this.process().then(directReschedule => {
+                if (directReschedule) {
+                    this.scheduleProcess(CynosureJobExecutor.DURATION_NEXT_JOB_POLL)
+                } else {
+                    this.scheduleProcess(CynosureJobExecutor.DURATION_SLEEP_POLL)
+                }
+            })
+        }, wait.milliSeconds())
     }
 
+    private process(): Promise<boolean> { // true = direct reschedule, false delayed reschedule
+        const listener = this.listener
+        if (listener) {
+            return this.taskQueue.popExpired(1, Time.now()).then(entries => {
+                if (entries.entries.length) {
+                    return Promise.all(entries.entries.map(entry => {
+                        const key = JobKey.deserialize(entry.uid)
+                        const connector = this.cynosureApiConnectorFactory.createApiConnector(key.source.id)
+                        if (connector) {
+                            const states = entry.data.map(s => { return ProcessingStates.JobState.deserialize(s) })
+                            const findState = (f: (x: ProcessingStates.JobState) => boolean): [number, ProcessingStates.JobState | undefined] => {
+                                const index = _.findLastIndex(states, f)
+                                return index >= 0 ? [index, states[index]] : [index, undefined]
+                            }
+                            const [queuedIndex, rawQueuedState] = findState(s => { return s instanceof ProcessingStates.JobQueued })
+                            const [startingIndex, rawStartingState] = findState(s => { return s instanceof ProcessingStates.JobStarting })
+                            const [startedIndex, rawStartedState] = findState(s => { return s instanceof ProcessingStates.JobStarted })
+                            const [abortedIndex, rawAbortState] = findState(s => { return s instanceof ProcessingStates.JobAbort })
 
-    async startJob(source: RepositorySource, ref: JobRef, sha: Refs.ShaRef): Promise<void> {
-        return this.redisFactory.get().then(async client => {
-            const jobKey = this.createJobKey(source, ref, sha)
-            const jobStatusWasSet = await client.set(jobKey, JobStatus.STARTED, "EX", CynosureJobExecutor.JOB_TTL_SECONDS, "NX")
-            if (jobStatusWasSet) {
-                const cynosureApiConnector = this.cynosureApiConnectorFactory.createApiConnector(source.id)
-                if (cynosureApiConnector) {
-                    return cynosureApiConnector.findProductId(source.path)
-                        .then(async productId => {
-                            if (productId) {
-                                logger.info(`Starting Cynosure Activity ${source}/${sha} ${ref.serialize()} -> ${productId} `)
-                                const jobStatus = await client.get(jobKey)
-                                if (jobStatus === JobStatus.STARTED) {
-                                    return cynosureApiConnector.startActivity(productId, sha).then(() => {
-                                        logger.info(`Started Cynosure Activity ${source} ${ref.serialize()}:${sha} -> ${productId}`)
-                                        ensureDefined(this.listener).onJobStarted(source, ref, sha)
-                                        this.startPoll(source, productId, ref, sha, cynosureApiConnector)
-                                        return Promise.resolve()
-                                    }).catch((e) => {
-                                        logger.error(`Could not start activity ${source}/${sha}: ${e}`)
-                                        ensureDefined(this.listener).onJobError(source, ref, sha)
-                                        return Promise.resolve()
-                                    })
-                                } else {
-                                    logger.info(`Skipped starting Cynosure Activity ${source} ${ref.serialize()}:${sha} -> ${productId}. Job aborted.`)
+                            if (abortedIndex >= 0) {
+                                //Abort job
+                                if (queuedIndex >= 0 && queuedIndex < abortedIndex) {
+                                    logger.debug(`Cancelled before job start: ${key}. No operation.`)
                                     return Promise.resolve()
+                                } else if (startedIndex >= 0) {
+                                    const startedState = <ProcessingStates.JobStarted>rawStartedState
+                                    logger.debug(`Cancelling Cynosure job: ${key}.`)
+                                    return connector.abortActivity(startedState.activityId, key.sha, "")
                                 }
                             } else {
-                                return Promise.reject(new Error(`${source} is not configured in Cynosure`))
-                            }
-                        }).catch(error => {
-                            return Promise.reject(error)
-                        })
-                } else {
-                    logger.warn(`No Cynosure API-connector available for ${source.id}. Can not start job.`)
-                }
-            } else {
-                logger.info(`Skip start Cynosure Activity ${source}/${sha} ${ref.serialize()}. Was aborted.`)
-                return Promise.resolve()
-            }
-        })
-
-    }
-
-    private startPoll(source: RepositorySource, productId: CynosureProtocol.ProductId, ref: JobRef, sha: Refs.ShaRef, connector: CynosureApiConnector): void {
-        this.redisFactory.get().then(async client => {
-            let notFoundPollCount = 0
-            const jobKey = this.createJobKey(source, ref, sha)
-            let pollFailureCount = 0
-            const executePoll = () => {
-                setTimeout(() => {
-                    client.get(jobKey).then(jobStatus => {
-                        if (jobStatus === JobStatus.STARTED) {
-                            connector.findActivity(productId, sha).then(activity => {
-                                pollFailureCount = 0
-                                if (activity) {
-                                    logger.debug(`Activity POLL ${productId}/${sha}: ${activity.state}, ${activity.verdict}, ${activity.activityId}`)
-                                    if (activity.state === CynosureProtocol.ActivityState.FINISHED) {
-                                        client.del(jobKey)
-                                        if (activity.verdict === CynosureProtocol.ActivityVerdict.PASSED) {
-                                            ensureDefined(this.listener).onJobSuccess(source, ref, sha)
-                                        } else if (activity.verdict === CynosureProtocol.ActivityVerdict.ABORTED) {
-                                            logger.debug(`Cynosure aborted job: ${productId}/${sha}`)
-                                        } else if (activity.verdict === CynosureProtocol.ActivityVerdict.FAILED) {
-                                            ensureDefined(this.listener).onJobFailure(source, ref, sha)
-                                        } else if (activity.verdict === CynosureProtocol.ActivityVerdict.ERRORED) {
-                                            ensureDefined(this.listener).onJobError(source, ref, sha)
-                                        } else if (activity.verdict === CynosureProtocol.ActivityVerdict.SKIPPED) {
-                                            //@TODO: Maybe a new state?
-                                            ensureDefined(this.listener).onJobError(source, ref, sha)
+                                if (rawQueuedState) {
+                                    // Starting queued job
+                                    const queuedState = <ProcessingStates.JobQueued>rawQueuedState
+                                    const handleError = (e: Error): Promise<void> => {
+                                        if (queuedState.failureCount < Constants.QUEUE_MAX_FAILURES) {
+                                            logger.warn(`Error: ${e} in QUEUED processing for ${key}. Rescheduling retry ${queuedState.failureCount + 1}/${Constants.QUEUE_MAX_FAILURES}.`)
+                                            return this.taskQueue.upsert(entry.uid, Constants.QUEUE_RESCHEDULE_DURATION, new ProcessingStates.JobQueued(queuedState.failureCount + 1).serialize())
+                                        } else {
+                                            logger.warn(`Error: ${e} in QUEUED processing for ${key}. No more retries of ${Constants.QUEUE_MAX_FAILURES}. Signalling JobError.`)
+                                            listener.onJobError(key.source, key.ref, key.sha)
+                                            return Promise.resolve()
                                         }
-                                    } else {
-                                        executePoll()
                                     }
-                                } else {
-                                    notFoundPollCount++
-                                    if (notFoundPollCount < CynosureJobExecutor.ACTIVITY_NOT_FOUND_MAX_POLL) {
-                                        logger.debug(`Activity ${productId}/${sha} not found. Retry ${notFoundPollCount}. Schedule retry.`)
-                                        executePoll()
-                                    } else {
-                                        logger.debug(`Activity ${productId}/${sha} not found. No more retries. Poll count: ${notFoundPollCount}. Signalling error to queue. `)
-                                        ensureDefined(this.listener).onJobError(source, ref, sha)
-                                    }
-                                }
-                            })
-                        } else {
-                            logger.debug(`Activity ${productId}/${sha} aborted. No more polling.`)
-                        }
-                    }).catch(e => {
-                        pollFailureCount++
-                        logger.warn(`Activity ${productId}/${sha} Poll error: ${e}`)
-                        if (pollFailureCount < CynosureJobExecutor.ACTIVITY_ERROR_MAX_POLL) {
-                            setTimeout(executePoll, CynosureJobExecutor.ACTIVITY_POLL_INTERVALL_SECONDS * 1000)
-                        } else {
-                            return Promise.reject(e)
-                        }
-                    })
-                }, CynosureJobExecutor.ACTIVITY_POLL_INTERVALL_SECONDS * 1000)
-            }
-            executePoll()
-        })
 
+                                    return connector.findProductId(key.source.path).then(productId => {
+                                        if (productId) {
+                                            return connector.startActivity(productId, key.sha).then(activityId => {
+                                                logger.info(`Starting Cynosure Activity ${key} -> Product: ${productId} Activity: ${activityId}`)
+                                                return this.taskQueue.upsert(entry.uid, Constants.STARTED_POLL_DURATION, new ProcessingStates.JobStarting(productId, 0).serialize())
+                                            })
+                                        } else {
+                                            return handleError(new Error(`Could not find product in Cynosure.`))
+                                        }
+                                    })
+                                } else if (rawStartingState) {
+                                    const startingState = <ProcessingStates.JobStarting>rawStartingState
+
+                                    const handleError = (e: Error): Promise<void> => {
+                                        if (startingState.failureCount < Constants.STARTING_MAX_FAILURES) {
+                                            logger.warn(`Error: ${e} when fetching Cynosure activity for ${key}. Rescheduling retry ${startingState.failureCount + 1}/${Constants.STARTING_MAX_FAILURES}.`)
+                                            return this.taskQueue.upsert(entry.uid, Constants.STARTED_POLL_DURATION, new ProcessingStates.JobStarting(startingState.productId, startingState.failureCount + 1).serialize())
+                                        } else {
+                                            logger.warn(`Error: ${e} when fetching Cynosure activity for ${key}. No more retries of ${Constants.STARTING_MAX_FAILURES}. Signalling JobError.`)
+                                            listener.onJobError(key.source, key.ref, key.sha)
+                                            return Promise.resolve()
+                                        }
+                                    }
+
+                                    return connector.findActivity(startingState.productId, key.sha).then(activity => {
+                                        if (activity) {
+                                            logger.info(`Started Cynosure Activity ${key} -> Product: ${startingState.productId} Activity: ${activity.activityId}`)
+                                            listener.onJobStarted(key.source, key.ref, key.sha)
+                                            return this.taskQueue.upsert(entry.uid, Constants.STARTED_POLL_DURATION, new ProcessingStates.JobStarted(startingState.productId, activity.activityId, 0).serialize())
+                                        } else {
+                                            return handleError(new Error(`Could not find activity.`))
+                                        }
+                                    }).catch(e => {
+                                        return handleError(e)
+                                    })
+                                } else if (rawStartedState) {
+                                    const startedState = <ProcessingStates.JobStarted>rawStartedState
+                                    const handleError = (e: Error): Promise<void> => {
+                                        if (startedState.failureCount < Constants.STARTED_MAX_FAILURES) {
+                                            logger.warn(`Error: ${e} in STARTED processing for ${key}. Rescheduling retry ${startedState.failureCount + 1}/${Constants.STARTED_MAX_FAILURES}.`)
+                                            return this.taskQueue.upsert(entry.uid, Constants.STARTED_POLL_DURATION, new ProcessingStates.JobStarted(startedState.productId, startedState.activityId, startedState.failureCount + 1).serialize())
+                                        } else {
+                                            logger.warn(`Error: ${e} in STARTED processing for ${key}. No more retries of ${Constants.QUEUE_MAX_FAILURES}. Signalling JobError.`)
+                                            listener.onJobError(key.source, key.ref, key.sha)
+                                            return Promise.resolve()
+                                        }
+                                    }
+
+                                    connector.findActivity(startedState.productId, key.sha).then(activity => {
+                                        if (activity) {
+                                            logger.debug(`Cynosure activity poll ${key} Cynosure: ${startedState.productId}/${activity.activityId}: State: ${activity.state} Verdict:${activity.verdict}`)
+                                            if (activity.state === CynosureProtocol.ActivityState.FINISHED) {
+                                                if (activity.verdict === CynosureProtocol.ActivityVerdict.PASSED) {
+                                                    listener.onJobSuccess(key.source, key.ref, key.sha)
+                                                    return Promise.resolve()
+                                                } else if (activity.verdict === CynosureProtocol.ActivityVerdict.ABORTED) {
+                                                    logger.debug(`Cynosure aborted job: ${key} Cynosure: ${startedState.productId}/${activity.activityId}`)
+                                                    listener.onJobAborted(key.source, key.ref, key.sha)
+                                                    return Promise.resolve()
+                                                } else if (activity.verdict === CynosureProtocol.ActivityVerdict.FAILED) {
+                                                    listener.onJobFailure(key.source, key.ref, key.sha)
+                                                    return Promise.resolve()
+                                                } else if (activity.verdict === CynosureProtocol.ActivityVerdict.ERRORED) {
+                                                    listener.onJobError(key.source, key.ref, key.sha)
+                                                    return Promise.resolve()
+                                                } else if (activity.verdict === CynosureProtocol.ActivityVerdict.SKIPPED) {
+                                                    logger.warn(`Cynosure skipped job: ${key} Cynosure: ${startedState.productId}/${activity.activityId}. No transition for skipped. Sending aborted to queue.`)
+                                                    listener.onJobAborted(key.source, key.ref, key.sha)
+                                                } else {
+                                                    logger.debug(`Unknown final state from Cynosure: ${activity.state}: Signalling error to job. ${key}`)
+                                                    listener.onJobError(key.source, key.ref, key.sha)
+                                                    return Promise.resolve()
+                                                }
+                                            } else {
+                                                return this.taskQueue.upsert(entry.uid, CynosureJobExecutor.DURATION_NEXT_JOB_POLL, new ProcessingStates.JobStarted(startedState.productId, startedState.activityId, 0).serialize())
+                                            }
+                                        } else {
+                                            return handleError(new Error(`Could not find activity.`))
+                                        }
+                                    }).catch(e => {
+                                        return handleError(e)
+                                    })
+                                }
+                            }
+                        } else {
+                            logger.debug(`Cynosure API connector not found ${key}. Removing job.`)
+                            listener.onJobError(key.source, key.ref, key.sha)
+                            return Promise.resolve()
+                        }
+                    })).then(() => {
+                        return entries.hasMore
+                    })
+                } else {
+                    return entries.hasMore
+                }
+            })
+        } else {
+            logger.warn("No listener attached to Cynosure Job Executor. Trying soon again.")
+            this.scheduleProcess(CynosureJobExecutor.DURATION_SLEEP_POLL)
+            return Promise.resolve(false)
+        }
     }
 
+    startJob(source: RepositorySource, ref: JobRef, sha: Refs.ShaRef): Promise<void> {
+        const key = new JobKey(source, ref, sha)
+        return this.taskQueue.upsert(key.serialize(), Duration.NO_DURATION, new ProcessingStates.JobQueued(0).serialize()).finally(() => {
+            this.scheduleProcess(Duration.NO_DURATION)
+        })
+    }
     abortJob(source: RepositorySource, ref: JobRef, sha: Refs.ShaRef): Promise<void> {
-        return this.redisFactory.get().then(async client => {
-            const jobKey = this.createJobKey(source, ref, sha)
-            await client.set(jobKey, JobStatus.ABORTED, "EX", CynosureJobExecutor.JOB_TTL_SECONDS)
-            const connector = this.cynosureApiConnectorFactory.createApiConnector(source.id)
-            if (connector) {
-                return connector.findProductId(source.path)
-                    .then(async productId => {
-                        if (productId) {
-                            logger.debug(`Requesting cynosure to abort job: ${productId}/${sha}`)
-                            connector.findActivity(productId, sha).then(activity => {
-                                if (activity) {
-                                    connector.abortActivity(activity.activityId, sha, "Newer commit on same Change.")
-                                } else {
-                                    logger.warn(`Could not find Cynosure job to abort: ${productId}/${sha}`)
-                                }
-                            })
-                        } else {
-                            return Promise.reject(new Error(`${source} is not configured in Cynosure`))
-                        }
-                    }).catch(error => {
-                        return Promise.reject(error)
-                    })
-            } else {
-                logger.warn(`No Cynosure API-connector available for ${source.id}. Can not abort job.`)
-            }
+        const key = new JobKey(source, ref, sha)
+        return this.taskQueue.upsert(key.serialize(), Duration.NO_DURATION, new ProcessingStates.JobAbort("Newer commit.").serialize()).finally(() => {
+            this.scheduleProcess(Duration.NO_DURATION)
         })
     }
 
     setListener(listener: JobExecutorListener): void {
         this.listener = listener
+        this.scheduleProcess(Duration.NO_DURATION)
     }
 }
 
+export namespace ProcessingStates {
+
+
+    export abstract class JobState {
+
+        constructor() { }
+
+        protected abstract constructorArgs(): any[]
+
+        serialize(): string {
+            return this.constructor.name + ":" + JSON.stringify(this.constructorArgs())
+        }
+
+        static deserialize(string: string): JobState {
+            const pos = string.indexOf(":")
+            const className = string.substring(0, pos)
+            const args = <any[]>JSON.parse(string.substring(pos + 1))
+            return new ((<any>ProcessingStates)[className])(...args)
+        }
+    }
+
+    export class JobStarting extends JobState {
+        constructor(public readonly productId: string, public readonly failureCount: number) {
+            super()
+        }
+
+        protected constructorArgs(): any[] {
+            return [this.productId, this.failureCount]
+        }
+
+    }
+
+    export class JobStarted extends JobState {
+        constructor(public readonly productId: string, public readonly activityId: string, public readonly failureCount: number) {
+            super()
+        }
+
+        protected constructorArgs(): any[] {
+            return [this.productId, this.activityId, this.failureCount]
+        }
+
+    }
+
+    export class JobQueued extends JobState {
+        constructor(public readonly failureCount: number) {
+            super()
+        }
+        protected constructorArgs(): any[] {
+            return [this.failureCount]
+        }
+    }
+
+    export class JobAbort extends JobState {
+        public reason: string
+        constructor(reason: string) {
+            super()
+            this.reason = reason
+        }
+        protected constructorArgs(): any[] {
+            return [this.reason]
+        }
+    }
+
+}

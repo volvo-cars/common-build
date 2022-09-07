@@ -46,7 +46,7 @@ export class GerritCynosureApiConnector implements CynosureApiConnector {
                             return Promise.resolve(undefined)
                         }
                     }).catch((error: AxiosError) => {
-                        return Promise.reject(`Could not fetch product-id for ${this.source.id}/${path}: ${error}`)
+                        return Promise.reject(new Error(`Could not fetch product-id for ${this.source.id}/${path}: ${error}`))
                     })
 
                     // This is the preferred endpoint BUT it doesn't work with csp-gerrit-qa projects.

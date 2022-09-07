@@ -44,6 +44,8 @@ import { VaultUtils } from './vault/vault-utils'
 import Koa from 'koa'
 import { RedisConfig, RedisFactoryImpl } from './redis/redis-factory'
 import { Env } from './utils/env'
+import { NodeId } from './system/node-id'
+import { TaskQueueFactoryImpl } from './task-queue/task-queue-factory-impl'
 const logger = createLogger("main")
 logger.info("Starting CommonBuild server...")
 
@@ -76,6 +78,8 @@ const vaultService = new VaultServiceImpl(new VaultOptions(
 
 createConfig(args.config, [new VaultValueSubstitutor(vaultService), new FileValueSubstitutor(), new EnvValueSubstitutor()]).then(async config => {
     console.log("Config:" + JSON.stringify(vaultService.mask(config), null, 2))
+    const nodeID = new NodeId(Env.getRequiredString("APP_NODE_ID"))
+    logger.debug(`Running in ${nodeID}`)
 
 
     const redisConfig = new RedisConfig(
@@ -105,8 +109,7 @@ createConfig(args.config, [new VaultValueSubstitutor(vaultService), new FileValu
         await activeRepositories.addActiveRepositories(...preloadRepositories)
     }
     //END DEV
-
-    const localGitFactory = new LocalGitFactoryImpl(config.gitCache, config.services.sources, vaultService, redisFactory)
+    const localGitFactory = new LocalGitFactoryImpl(config.gitCache, config.services.sources, vaultService, redisFactory, nodeID)
 
     const repositoryAccessFactory = new RepositoryAccessFactoryImpl(config.services.sources, localGitFactory, vaultService)
 
@@ -125,7 +128,8 @@ createConfig(args.config, [new VaultValueSubstitutor(vaultService), new FileValu
 
 
     const cynosureApiConnectorFactory = createCynosureConnectorFactory(redisFactory, config.services.sources)
-    const cynosureJobExecutor = new CynosureJobExecutor(cynosureApiConnectorFactory, redisFactory)
+    const taskQueueFactory = new TaskQueueFactoryImpl(redisFactory)
+    const cynosureJobExecutor = new CynosureJobExecutor(cynosureApiConnectorFactory, taskQueueFactory.createQueue("cynosure"))
     const systemFilesAccess = new SystemFilesAccessImpl(repositoryAccessFactory)
     const artifactoryFactory = new ArtifactoryFactoryImpl(vaultService)
     const dockerRegistryFactory = new ArtifactoryDockerRegistryFactoryImpl(config.services.dockerRegistries, vaultService)

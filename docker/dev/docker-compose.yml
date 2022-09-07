@@ -13,6 +13,7 @@ services:
       REDIS_HOST: redis
       REDIS_PORT:
       REDIS_PASSWORD:
+      APP_NODE_ID: local-dev
     links:
       - redis
     depends_on:

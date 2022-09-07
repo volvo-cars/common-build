@@ -96,6 +96,9 @@ export class BuildSystemImpl implements BuildSystem, QueueListener, JobExecutorL
     onJobFailure(source: RepositorySource, ref: JobRef, sha: Refs.ShaRef): void {
         this.updateQueue(source, ref, sha, QueueStatus.FAILURE)
     }
+    onJobAborted(source: RepositorySource, ref: JobRef, sha: Refs.ShaRef): void {
+        this.updateQueue(source, ref, sha, QueueStatus.ABORTED)
+    }
     onJobSuccess(source: RepositorySource, ref: JobRef, sha: Refs.ShaRef): void {
         if (ref.type === JobRefType.UPDATE) {
             logger.info(`Jobs successful: ${source}/${ref.serialize()} ${sha}`)
@@ -110,24 +113,23 @@ export class BuildSystemImpl implements BuildSystem, QueueListener, JobExecutorL
                         await repositoryAccess.setValidBuild(source.id, ref.ref, sha)
                     }
                     const action = repositoryConfig.buildAutomation.default
-                    logger.debug(`Job successful action: ${action} (${source}/${ref.serialize()})`)
+                    logger.debug(`Job successful action: ${action} ${source}/${ref}`)
                     if (action === RepositoryConfig.Action.Merge || action === RepositoryConfig.Action.Release) {
                         repositoryAccess.merge(source.path, ref.ref)
                             .then(async updatedBranch => {
-                                logger.info(`Merged ${source}/${ref.serialize()} ${sha}`)
+                                logger.info(`Merged ${source}/${ref} ${sha}`)
                                 return this.updateQueue(source, ref, sha, QueueStatus.SUCCEESS).then(() => {
                                     return updatedBranch
                                 })
                             })
                             .then(updatedBranch => {
-                                return this.updateQueue(source, ref, sha, QueueStatus.SUCCEESS).then(() => {
-                                    if (action === RepositoryConfig.Action.Release) {
-                                        return this.release(source, updatedBranch, VersionType.MINOR).then(_ => { return })
-                                    } else {
-                                        return Promise.resolve()
-                                    }
-                                })
-
+                                if (action === RepositoryConfig.Action.Release) {
+                                    return this.release(source, updatedBranch, VersionType.MINOR).then(version => {
+                                        logger.info(`Released ${version.toString()} ${source}/${updatedBranch.ref}`)
+                                    })
+                                } else {
+                                    return Promise.resolve()
+                                }
                             })
                             .catch(error => {
                                 logger.error(`Could not merge ${source}/${ref.serialize()} ${sha}:${error}`)
@@ -138,9 +140,6 @@ export class BuildSystemImpl implements BuildSystem, QueueListener, JobExecutorL
                     logger.warn(`Missing repository config for ${source}. No action taken.`)
                 }
             })
-
-
-
         } else {
             this.updateQueue(source, ref, sha, QueueStatus.SUCCEESS)
         }
@@ -221,7 +220,6 @@ export class BuildSystemImpl implements BuildSystem, QueueListener, JobExecutorL
 
     async onUpdate(update: Update): Promise<void> {
         const cmd = async () => {
-            logger.debug(`Fetching ${update}`)
             await this.localGitFactory.execute(update.source, LocalGitCommands.fetchUpdate(update), LocalGitLoadMode.CACHED)
             let buildYml = await this.systemFilesAccess.getBuildConfig(update.source, update.sha)
             if (buildYml) {
@@ -237,10 +235,9 @@ export class BuildSystemImpl implements BuildSystem, QueueListener, JobExecutorL
 
     async onPush(source: RepositorySource, ref: Refs.Ref, newSha: Refs.ShaRef): Promise<void> {
         const cmd = async () => {
-            const modelAction = NormalizedModelUtil.normalize(ref) ? this.repositoryModelFactory.get(source).invalidate() : Promise.resolve()
-            await Promise.all([this.localGitFactory.invalidate(source), modelAction])
             const normalizedRef = NormalizedModelUtil.normalize(ref)
             if (normalizedRef) {
+                await Promise.all([this.repositoryModelFactory.get(source).invalidate(), this.localGitFactory.invalidate(source)])
                 if (normalizedRef.type === NormalizedModel.Type.MAIN_BRANCH) {
                     const hasBuildYml = (await this.systemFilesAccess.getBuildConfig(source, newSha)) ? true : false
                     if (hasBuildYml) {
@@ -251,10 +248,11 @@ export class BuildSystemImpl implements BuildSystem, QueueListener, JobExecutorL
                 } else if (normalizedRef.type === NormalizedModel.Type.RELEASE_TAG) {
                     logger.info(`Got release: ${source}/${ref}. Triggering dependency scan.`)
                     const publications = await this.publisherManager.publications(source, newSha)
+                    // Launched parallel
                     this.scannerManager.processForDependencies(...[[new DependencyRef.GitRef(source)], publications].flat())
                 }
             }
-            return
+            return Promise.resolve()
         }
         return this.executionSerializer.execute(this.createSourceExecutionKey(source), cmd)
     }
@@ -266,6 +264,7 @@ export class BuildSystemImpl implements BuildSystem, QueueListener, JobExecutorL
         }
         return this.executionSerializer.execute(this.createSourceExecutionKey(source), cmd)
     }
+
 }
 
 

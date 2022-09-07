@@ -6,6 +6,7 @@ export interface JobExecutorListener {
     onJobStarted(source: RepositorySource, ref: JobRef, sha: Refs.ShaRef): void
     onJobFailure(source: RepositorySource, ref: JobRef, sha: Refs.ShaRef): void
     onJobSuccess(source: RepositorySource, ref: JobRef, sha: Refs.ShaRef): void
+    onJobAborted(source: RepositorySource, ref: JobRef, sha: Refs.ShaRef): void
     onJobError(source: RepositorySource, ref: JobRef, sha: Refs.ShaRef): void
 }
 

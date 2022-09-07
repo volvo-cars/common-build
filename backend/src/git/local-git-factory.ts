@@ -2,15 +2,14 @@ import fs from 'fs';
 import fsExtra from 'fs-extra';
 import _ from 'lodash';
 import os from 'os';
-import { resolve } from 'path';
 import simpleGit, { SimpleGit } from 'simple-git';
 import { SystemConfig } from "../config/system-config";
 import { RepositorySource } from "../domain-model/repository-model/repository-source";
 import { ServiceConfig } from "../domain-model/system-config/service-config";
 import { createLogger, loggerName } from "../logging/logging-factory";
 import { RedisFactory } from "../redis/redis-factory";
-import { Update } from '../system/build-system';
 import { createExecutionSerializer } from "../system/execution-serializer";
+import { NodeId } from '../system/node-id';
 import { VaultService } from "../vault/vault-service";
 import { VaultUtils } from "../vault/vault-utils";
 import { LocalGitCommands } from './local-git-commands';
@@ -49,7 +48,7 @@ export class LocalGitFactoryImpl implements LocalGitFactory {
 
     private executor = createExecutionSerializer()
 
-    constructor(private config: SystemConfig.GitCache, private sources: ServiceConfig.SourceService[], private vaultService: VaultService, private redisFactory: RedisFactory) { }
+    constructor(private config: SystemConfig.GitCache, private sources: ServiceConfig.SourceService[], private vaultService: VaultService, private redisFactory: RedisFactory, private nodeId: NodeId) { }
 
     execute<T1>(source: RepositorySource, cmd: GitFunction<T1>, loadMode: LocalGitLoadMode): Promise<T1> {
         const sourceConfig = this.sources.find(s => { return s.id === source.id })
@@ -115,8 +114,6 @@ export class LocalGitFactoryImpl implements LocalGitFactory {
                             .addConfig("fetch.prune", "true")
                             .addConfig("fetch.pruneTags", "true")
                     }
-                    const redisClient = await this.redisFactory.get()
-                    const sourceKey = this.getSourceKey(source)
 
                     const executeCommand = <T>(cmd: GitFunction<T>, retryCount: number): Promise<T> => {
                         const startTime = (new Date()).getTime()
@@ -125,11 +122,11 @@ export class LocalGitFactoryImpl implements LocalGitFactory {
                         }
                         return cmd.execute(git, { baseDir: repositoryPath, source: source })
                             .then(result => {
-                                logger.debug(`Git command success - ${cmd.description} after ${secondsPassed()} seconds: ${source}.`)
+                                logger.debug(`Git ${cmd.description}  (${secondsPassed()} secs) ${source}.`)
                                 return result
                             })
                             .catch(e => {
-                                logger.warn(`Git command failure ${cmd.description} failure after ${secondsPassed()} seconds: ${e} on ${source}. Retry counts left: ${retryCount}`)
+                                logger.warn(`Git failure ${cmd.description} (${secondsPassed()} secs): ${e} on ${source}. Retry counts left: ${retryCount}/${LocalGitFactoryImpl.GIT_RETRY_COUNT}`)
                                 if (retryCount > 0) {
                                     const promise = new Promise<T>((resolve, reject) => {
                                         setTimeout(() => {
@@ -144,12 +141,12 @@ export class LocalGitFactoryImpl implements LocalGitFactory {
                                     })
                                     return promise
                                 } else {
-                                    logger.warn(`Git command failure with no more retries(${LocalGitFactoryImpl.GIT_RETRY_COUNT}): ${e} on ${source}.`)
                                     return Promise.reject(e)
                                 }
                             })
                     }
-
+                    const redisClient = await this.redisFactory.get()
+                    const sourceKey = this.getSourceKey(source)
                     if (!initialized || loadMode === LocalGitLoadMode.FETCH || !(await redisClient.get(sourceKey))) {
                         await executeCommand(LocalGitCommands.fetchRemotes(), LocalGitFactoryImpl.GIT_RETRY_COUNT).then(() => {
                             return redisClient.set(sourceKey, "1", "EX", LocalGitFactoryImpl.GIT_LOCAL_FRESH_TTL)
@@ -168,7 +165,7 @@ export class LocalGitFactoryImpl implements LocalGitFactory {
     }
 
     private getSourceKey(source: RepositorySource): string {
-        return `local-git:fresh:${source.id}:${source.path}`
+        return `local-git:fresh:${this.nodeId.id}:${source.id}:${source.path}`
     }
 
     invalidate(source: RepositorySource): Promise<void> {

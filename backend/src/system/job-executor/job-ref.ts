@@ -33,6 +33,10 @@ export class JobRef {
     serialize(): string {
         return `${this.type}:${this.ref}`
     }
+
+    toString(): string {
+        return `Ref: ${this.type}:${this.ref}`
+    }
 }
 
 
