@@ -89,38 +89,33 @@ export class GerritCynosureApiConnector implements CynosureApiConnector {
         })
     }
 
-    startActivity(productId: CynosureProtocol.ProductId, sha: Refs.ShaRef): Promise<void> {
-        const execute = () => {
-            return Http.createRequest("https://core.messagebus.cynosure.volvocars.biz/api/3.0.0/ProductUpdated", HttpMethod.POST).setData({
-                "productId": {
-                    "namespace": productId,
-                    "instance": sha.sha
-                },
-                "sender": {
-                    "service": "common-build"
-                },
-                "_updateOps": {
-                    "push": {
-                        "tags": "ready_to_build"
-                    }
+    startActivity(productId: CynosureProtocol.ProductId, sha: Refs.ShaRef): Promise<boolean> {
+        return Http.createRequest("https://core.messagebus.cynosure.volvocars.biz/api/3.0.0/ProductUpdated", HttpMethod.POST).setData({
+            "productId": {
+                "namespace": productId,
+                "instance": sha.sha
+            },
+            "sender": {
+                "service": "common-build"
+            },
+            "_updateOps": {
+                "push": {
+                    "tags": "ready_to_build"
                 }
-            }).setHeaders({
-                "Content-Type": "application/json"
             }
-            ).execute()
-                .then(response => {
-                    logger.debug(`Start activity for ${productId} status:${response.status}`)
-                    return Promise.resolve()
-                })
-                .catch((e: AxiosError) => {
-                    if (e.response?.status === 404) {
-                        return Promise.resolve(null) // Signals for valid retry
-                    } else {
-                        return Promise.reject(new Error(`Could not start activity for product ${productId}. Error ${e.code} ${e.response?.status}`))
-                    }
-                })
-        }
-        return retryWithTimeout(execute, `Start Activity for ${sha} in ${productId}`, 200, 5)
+        }).setHeaders({
+            "Content-Type": "application/json"
+        }).execute()
+            .then(response => {
+                return Promise.resolve(true)
+            })
+            .catch((e: AxiosError) => {
+                if (e.response?.status === 404) {
+                    return Promise.resolve(false) // Signals for valid retry
+                } else {
+                    return Promise.reject(new Error(`Could not start activity for product ${productId}. Error ${e.code} ${e.response?.status}`))
+                }
+            })
     }
 
     abortActivity(activityId: string, sha: Refs.ShaRef, reason: string): Promise<void> {

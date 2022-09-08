@@ -4,7 +4,13 @@ import { RepositoryPath } from "../../domain-model/repository-model/repository-s
 export interface CynosureApiConnector {
     findProductId(path: RepositoryPath): Promise<CynosureProtocol.ProductId | undefined>
     findActivity(productId: CynosureProtocol.ProductId, sha: Refs.ShaRef, timeout?: number): Promise<CynosureProtocol.Activity | undefined>
-    startActivity(productId: CynosureProtocol.ProductId, sha: Refs.ShaRef): Promise<void>
+    /**
+     * Starts the build for at Cynosure
+     * @param productId 
+     * @param sha 
+     * @return true if started false if not
+     */
+    startActivity(productId: CynosureProtocol.ProductId, sha: Refs.ShaRef): Promise<boolean>
     abortActivity(activityId: CynosureProtocol.ActivityId, sha: Refs.ShaRef, reason: string): Promise<void>
 }
 

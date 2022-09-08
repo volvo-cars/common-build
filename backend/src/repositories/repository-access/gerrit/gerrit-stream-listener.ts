@@ -72,7 +72,6 @@ export class GerritStreamListener {
                                         if (change) {
                                             if (_.isNumber(change.patchSetNumber)) {
                                                 const changeNumber = change.changeNumber
-
                                                 const changeInfo = await this.changeCache.getChangeByChangeNumber(source, changeNumber)
                                                 if (changeInfo) {
                                                     let update = new Update(

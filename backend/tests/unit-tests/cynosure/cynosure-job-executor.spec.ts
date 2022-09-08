@@ -1,4 +1,4 @@
-import { ProcessingStates } from "../../../src/cynosure/job-executor/cynosure-job-executor"
+import { ProcessingStates } from "../../../src/cynosure/job-executor/processing-states"
 
 describe("Verify ProcessStates", () => {
     it("Serialize / Deserialize Active", async () => {

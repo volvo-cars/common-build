@@ -25,6 +25,7 @@ import { buildQueue, Queue, QueueListener, QueueStatus } from "./queue/queue"
 import { Time } from "./time"
 import { LocalGitCommands } from '../git/local-git-commands'
 import { BuildConfig } from '../domain-model/system-config/build-config'
+import { abort } from 'process'
 
 export interface BuildSystem {
     onUpdate(update: Update): Promise<void>
@@ -64,8 +65,11 @@ export class BuildSystemImpl implements BuildSystem, QueueListener, JobExecutorL
     private executionSerializer: ExecutionSerializer
     private systemFilesAccess: SystemFilesAccess
 
+    private static ABORT_KEY = `aborted:changes:`
+    private static ABORT_TTL = 120
+
     constructor(
-        redis: RedisFactory,
+        private redis: RedisFactory,
         time: Time,
         private jobExecutor: JobExecutor,
         private repositoryAcccessFactory: RepositoryAccessFactory,
@@ -133,12 +137,14 @@ export class BuildSystemImpl implements BuildSystem, QueueListener, JobExecutorL
                             })
                             .catch(error => {
                                 logger.error(`Could not merge ${source}/${ref.serialize()} ${sha}:${error}`)
-                                return this.updateQueue(source, ref, sha, QueueStatus.FAILURE)
+                                return Promise.reject(error)
                             })
                     }
                 } else {
                     logger.warn(`Missing repository config for ${source}. No action taken.`)
                 }
+            }).catch(e => {
+                this.updateQueue(source, ref, sha, QueueStatus.FAILURE)
             })
         } else {
             this.updateQueue(source, ref, sha, QueueStatus.SUCCEESS)
@@ -168,47 +174,58 @@ export class BuildSystemImpl implements BuildSystem, QueueListener, JobExecutorL
     }
 
     onQueueUpdated(source: RepositorySource, ref: JobRef, sha: Refs.ShaRef, buildState: BuildState): void {
+        const abortionKey = `${BuildSystemImpl.ABORT_KEY}:${source}:${ref}:${sha}`
         const cmd = async () => {
-            const status = buildState.current().status
-            logger.info(`Queue updated: ${source}/${ref.serialize()} ${sha} -> ${status}`)
-            if (status === QueueStatus.STARTING) {
-                if (ref.type === JobRefType.UPDATE) {
-                    this.repositoryAcccessFactory.createAccess(source.id).rebase(source.path, ref.ref)
-                        .then(async newSha => {
-                            if (newSha) {
-                                logger.info(`Rebased update ${ref.serialize()} in ${source} sha: ${sha} -> ${newSha}`)
-                                return this.updateQueue(source, ref, sha, QueueStatus.ABORTED) // Will get a new update for the rebase.
-                            } else {
-                                logger.debug(`No rebase needed for ${ref.serialize()} in ${source} sha: ${sha}`)
-                                const dependencyTree = await this.scannerManager.allDependencies(source, sha)
-                                const dependencyProblems = dependencyTree.getProblems()
-
-                                const dependencyTreeLog = [`***************** Dependency tree for ${source}/${sha}`]
-                                dependencyTree.traverse((ref: DependencyRef.Ref, version: Version, depth: number) => {
-                                    dependencyTreeLog.push(`${_.repeat(" ", depth * 3)} ${ref.toString()}: ${version.asString()}`)
-                                })
-                                dependencyTreeLog.push(`***************** Problem count: ${dependencyProblems.length}`)
-                                if (dependencyProblems.length) {
-                                    dependencyTreeLog.push(`Dependendency problems with ${source}/${sha}: ${dependencyProblems.map(p => { return p.asString() }).join(", ")}. Signalling dependency issue to queue.`)
-                                }
-                                console.log(dependencyTreeLog.join("\n"))
-                                if (dependencyProblems.length) {
-                                    this.updateQueue(source, ref, sha, QueueStatus.DEPENDENCY)
+            return this.redis.get().then(async client => {
+                const status = buildState.current().status
+                logger.info(`Queue updated: ${source}/${ref.serialize()} ${sha} -> ${status}`)
+                if (status === QueueStatus.STARTING) {
+                    if (ref.type === JobRefType.UPDATE) {
+                        this.repositoryAcccessFactory.createAccess(source.id).rebase(source.path, ref.ref)
+                            .then(async newSha => {
+                                if (newSha) {
+                                    logger.info(`Rebased update ${ref} in ${source} sha: ${sha} -> ${newSha}. No more operations. Update event will abort current.`)
                                 } else {
-                                    this.jobExecutor.startJob(source, ref, sha)
+                                    //DUMMY IMPL. TO BE FIXED. Race condition in abortion signal comes to job executor before started. Needs new PREP state in Queue.
+                                    const aborted = (await client.get(abortionKey)) === "ABORTED"
+                                    if (!aborted) {
+                                        logger.debug(`Fast-forward possible for ${ref} in ${source} sha: ${sha}. Continue build start.`)
+                                        const dependencyTree = await this.scannerManager.allDependencies(source, sha)
+                                        const dependencyProblems = dependencyTree.getProblems()
+
+                                        const dependencyTreeLog = [`***************** Dependency tree for ${source}/${sha}`]
+                                        dependencyTree.traverse((ref: DependencyRef.Ref, version: Version, depth: number) => {
+                                            dependencyTreeLog.push(`${_.repeat(" ", depth * 3)} ${ref.toString()}: ${version.asString()}`)
+                                        })
+                                        dependencyTreeLog.push(`***************** Problem count: ${dependencyProblems.length}`)
+                                        if (dependencyProblems.length) {
+                                            dependencyTreeLog.push(`Dependendency problems with ${source}/${sha}: ${dependencyProblems.map(p => { return p.asString() }).join(", ")}. Signalling dependency issue to queue.`)
+                                        }
+                                        console.log(dependencyTreeLog.join("\n"))
+                                        if (dependencyProblems.length) {
+                                            this.updateQueue(source, ref, sha, QueueStatus.DEPENDENCY)
+                                        } else {
+                                            this.jobExecutor.startJob(source, ref, sha)
+                                        }
+                                    } else {
+                                        logger.debug(`Abortion protection. Skip processing of Change: ${ref} in ${source} sha: ${sha}.`)
+                                    }
                                 }
-                            }
-                        })
-                        .catch(error => {
-                            logger.debug(`Error while rebasing update ${ref.ref} in ${source}: ${error}`)
-                            return this.updateQueue(source, ref, sha, QueueStatus.CONFLICT)
-                        })
-                } else {
-                    throw new Error("Not implemented")
+                            })
+                            .catch(error => {
+                                logger.debug(`Error while rebasing update ${ref.ref} in ${source}: ${error}`)
+                                return this.updateQueue(source, ref, sha, QueueStatus.CONFLICT)
+                            })
+                    } else {
+                        throw new Error("Branch builds not implemented yet.")
+                    }
+                } else if (status === QueueStatus.ABORTED) {
+                    //DUMMY IMPL. TO BE FIXED.
+                    await client.set(abortionKey, "ABORTED", "EX", BuildSystemImpl.ABORT_TTL)
+                    this.jobExecutor.abortJob(source, ref, sha)
                 }
-            } else if (status === QueueStatus.ABORTED) {
-                this.jobExecutor.abortJob(source, ref, sha)
-            }
+            })
+
         }
         this.executionSerializer.execute(this.createSourceExecutionKey(source), cmd)
     }
@@ -246,9 +263,9 @@ export class BuildSystemImpl implements BuildSystem, QueueListener, JobExecutorL
                         this.activeRepositories.removeActiveRepositories(source)
                     }
                 } else if (normalizedRef.type === NormalizedModel.Type.RELEASE_TAG) {
-                    logger.info(`Got release: ${source}/${ref}. Triggering dependency scan.`)
+                    logger.info(`Reveived release: ${source}/${ref}. Triggering dependency scan for known dependent repos.`)
                     const publications = await this.publisherManager.publications(source, newSha)
-                    // Launched parallel
+                    // Launched in parallel
                     this.scannerManager.processForDependencies(...[[new DependencyRef.GitRef(source)], publications].flat())
                 }
             }

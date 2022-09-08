@@ -44,11 +44,11 @@ class HttpBuilderImpl implements HttpBuilder {
         const request = axios.request(this.config)
 
         return request.then((response: AxiosResponse) => {
-            const responseData = response.data ? chopString(JSON.stringify(response.data), 100) : "<empty>"
+            const responseData = response.data ? chopString(JSON.stringify(response.data), 500) : "<empty>"
             logger.debug(`API: ${response.status} ${logStatement} -> ${responseData}`)
             return Promise.resolve(response)
         }).catch((e: AxiosError) => {
-            const responseData = "->" + e.response?.data ? chopString(JSON.stringify(e.response?.data), 100) : "<empty>"
+            const responseData = "->" + e.response?.data ? chopString(JSON.stringify(e.response?.data), 500) : "<empty>"
             logger.info(`API: ${e.response?.status} ${logStatement} -> ${responseData}`)
             return Promise.reject(e)
         })
