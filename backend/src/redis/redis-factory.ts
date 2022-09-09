@@ -1,4 +1,5 @@
 import Redis, { RedisOptions } from 'ioredis';
+import { ShutdownManager } from '../shutdown-manager/shutdown-manager';
 
 export class RedisConfig {
     constructor(public readonly host: string, public readonly user: string | undefined, public readonly password: string | undefined, public readonly port: number | undefined) { }
@@ -14,7 +15,10 @@ export interface RedisFactory {
     shutdown(): Promise<void>
 }
 
-export class RedisFactoryImpl implements RedisFactory {
+export class RedisFactoryImpl implements RedisFactory, ShutdownManager.Service {
+    public serviceName: string = "RedisFactory"
+    public shutdownPriority = 100
+
     private client: Redis
     constructor(config: RedisConfig) {
         this.client = new Redis(<RedisOptions>{

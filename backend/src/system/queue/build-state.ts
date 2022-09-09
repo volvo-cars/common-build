@@ -25,9 +25,9 @@ export class BuildState {
 
     push(status: QueueStatus, timestamp: number): BuildState {
         let currentStatus = this.current()
-        if (timestamp < this.current().timestamp) {
+        /*if (timestamp < this.current().timestamp) {
             throw new Error("Can not an earlier event.")
-        }
+        }*/
         if (currentStatus.status === status) {
             throw new Error(`Can not re-enter state: ${status}`)
         }

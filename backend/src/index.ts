@@ -46,6 +46,8 @@ import { RedisConfig, RedisFactoryImpl } from './redis/redis-factory'
 import { Env } from './utils/env'
 import { NodeId } from './system/node-id'
 import { TaskQueueFactoryImpl } from './task-queue/task-queue-factory-impl'
+import { ShutdownManagerImpl } from './shutdown-manager/shutdown-manager-impl'
+import { KoaServiceWrapper } from './shutdown-manager/koa-service-wrapper'
 const logger = createLogger("main")
 logger.info("Starting CommonBuild server...")
 
@@ -80,7 +82,7 @@ createConfig(args.config, [new VaultValueSubstitutor(vaultService), new FileValu
     console.log("Config:" + JSON.stringify(vaultService.mask(config), null, 2))
     const nodeID = new NodeId(Env.getRequiredString("APP_NODE_ID"))
     logger.debug(`Running in ${nodeID}`)
-
+    const shutdownManager = new ShutdownManagerImpl()
 
     const redisConfig = new RedisConfig(
         Env.getRequiredString("REDIS_HOST"),
@@ -90,6 +92,8 @@ createConfig(args.config, [new VaultValueSubstitutor(vaultService), new FileValu
     )
     logger.info(`Creating Redis with config: ${redisConfig}`)
     const redisFactory = new RedisFactoryImpl(redisConfig)
+    shutdownManager.register(redisFactory)
+
     const activeRepositories = createActiveRepositories(redisFactory)
     //DEV
     let preloadRepositories: RepositorySource[] | undefined
@@ -130,6 +134,7 @@ createConfig(args.config, [new VaultValueSubstitutor(vaultService), new FileValu
     const cynosureApiConnectorFactory = createCynosureConnectorFactory(redisFactory, config.services.sources)
     const taskQueueFactory = new TaskQueueFactoryImpl(redisFactory)
     const cynosureJobExecutor = new CynosureJobExecutor(cynosureApiConnectorFactory, taskQueueFactory.createQueue("cynosure"))
+    shutdownManager.register(cynosureJobExecutor)
     const systemFilesAccess = new SystemFilesAccessImpl(repositoryAccessFactory)
     const artifactoryFactory = new ArtifactoryFactoryImpl(vaultService)
     const dockerRegistryFactory = new ArtifactoryDockerRegistryFactoryImpl(config.services.dockerRegistries, vaultService)
@@ -162,20 +167,13 @@ createConfig(args.config, [new VaultValueSubstitutor(vaultService), new FileValu
     app.on('error', (error, ctx) => logger.error("Koa error: %d", error))
     logger.debug(`Starting server on port ${args.port}`)
     const server = app.listen(args.port)
+    shutdownManager.register(new KoaServiceWrapper(server))
 
     const shutdown = (exit: number = 0): void => {
-        logger.info("Shutting down server...")
-        server.close()
-        process.exit(exit)
+        shutdownManager.shutdownAll()
     }
     process.on('SIGINT', shutdown)
     process.on('SIGTERM', shutdown)
-
-    /*    let artifactoryFactory = new ArtifactoryFactory(vaultService,config.artifactory)
-        artifactoryFactory.get("ara").getArtifact("HI_release/CSP").then ((artifacts) => {
-            console.log("Got artifacts:" + JSON.stringify(artifacts))
-        })
-    */
 
     config.services.sources.forEach(async sourceConfig => {
         if (sourceConfig instanceof ServiceConfig.GerritSourceService) {
@@ -184,6 +182,7 @@ createConfig(args.config, [new VaultValueSubstitutor(vaultService), new FileValu
             const [user, key] = VaultUtils.splitUserSecret(await vaultService.getSecret(`csp/common-build/ssh-${sourceConfig.ssh}`))
             const listenerConfig = new GerritStreamListenerConfig(sourceConfig, user, key)
             const gerritConnection = new GerritStreamListener(listenerConfig, new ChangeCache(redisFactory, repositoryAccessFactory.getImplementation<GerritRepositoryAccess>(sourceConfig.id)), protectedProjects)
+            shutdownManager.register(gerritConnection)
             gerritConnection.start(buildSystem)
         }
     })

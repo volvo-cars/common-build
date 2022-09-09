@@ -7,7 +7,7 @@ import { createLogger, loggerName } from '../../../src/logging/logging-factory'
 import { createForTest } from "../../../src/redis/redis-factory"
 import { RepositoryFactoryImpl } from '../../../src/repositories/repository/repository-factory'
 import { BuildSystem, BuildSystemImpl, Update } from "../../../src/system/build-system"
-import { JobExecutor, JobExecutorListener } from "../../../src/system/job-executor/job-executor"
+import { JobExecutor } from '../../../src/system/job-executor/job-executor'
 import { JobRef, JobRefType } from "../../../src/system/job-executor/job-ref"
 import { ActiveRepositories } from '../../../src/system/queue/active-repositories'
 import { QueueStatus } from "../../../src/system/queue/queue"
@@ -17,6 +17,7 @@ import { MockPublisherManager } from '../../helpers/mock-publisher-manager'
 import { MockRepositoryAccessFactory } from '../../helpers/mock-repository-access-factory'
 import { MockScannerManager } from '../../helpers/mock-scanner-manager'
 import { MockIncrementTime } from "../../helpers/mock-time"
+import { TestWait } from '../../helpers/test-wait'
 
 const logger = createLogger(loggerName(__filename))
 
@@ -63,15 +64,16 @@ describe("Testing queue functionality", () => {
             title: "Some updated"
         }
         let ref = JobRef.create(JobRefType.UPDATE, updateId)
-
+        const job = new JobExecutor.Key(source, ref, sha)
         let [buildSystem, time, jobExecutor] = createSystem()
         await buildSystem.onUpdate(update)
-        expect(await buildSystem.getStatus(source, ref, sha)).toBe(QueueStatus.STARTING)
-        expect(jobExecutor.checkExists(source, ref, sha)).toBe(true)
-        await jobExecutor.signal(MockAction.STARTED, source, ref, sha)
-        expect(await buildSystem.getStatus(source, ref, sha)).toBe(QueueStatus.STARTED)
-        await jobExecutor.signal(MockAction.FAILURE, source, ref, sha)
-        expect(await buildSystem.getStatus(source, ref, sha)).toBeNull() //Removed
+        expect(await buildSystem.getStatus(job)).toBe(QueueStatus.STARTING)
+        await TestWait.waitPromise(500)
+        expect(jobExecutor.checkExists(job)).toBe(true)
+        await jobExecutor.signal(MockAction.STARTED, job)
+        expect(await buildSystem.getStatus(job)).toBe(QueueStatus.STARTED)
+        await jobExecutor.signal(MockAction.FAILURE, job)
+        expect(await buildSystem.getStatus(job)).toBeNull() //Removed
     })
 
     it("Add Update after existing with different sha. Ensure aborting until next starts", async () => {
@@ -104,21 +106,25 @@ describe("Testing queue functionality", () => {
 
         let ref = JobRef.create(JobRefType.UPDATE, updateId)
 
+        const job1 = new JobExecutor.Key(source, ref, sha1)
+        const job2 = new JobExecutor.Key(source, ref, sha2)
+
         let [buildSystem, time, jobExecutor] = createSystem()
         await buildSystem.onUpdate(update1)
-        expect(await buildSystem.getStatus(source, ref, sha1)).toBe(QueueStatus.STARTING)
-        expect(jobExecutor.checkExists(source, ref, sha1)).toBe(true)
+        expect(await buildSystem.getStatus(job1)).toBe(QueueStatus.STARTING)
+        await TestWait.waitPromise(500)
+        expect(jobExecutor.checkExists(job1)).toBe(true)
 
 
         await buildSystem.onUpdate(update2)
-        expect(await buildSystem.getStatus(source, ref, sha2)).toBe(QueueStatus.STARTING)
+        expect(await buildSystem.getStatus(job2)).toBe(QueueStatus.STARTING)
 
-        expect(await buildSystem.getStatus(source, ref, sha1)).toBeNull()
-        expect(await buildSystem.getStatus(source, ref, sha2)).toBe(QueueStatus.STARTING)
-        await jobExecutor.signal(MockAction.STARTED, source, ref, sha2)
-        expect(await buildSystem.getStatus(source, ref, sha2)).toBe(QueueStatus.STARTED)
-        await jobExecutor.signal(MockAction.FAILURE, source, ref, sha2)
-        expect(await buildSystem.getStatus(source, ref, sha2)).toBeNull()
+        expect(await buildSystem.getStatus(job1)).toBeNull()
+        expect(await buildSystem.getStatus(job2)).toBe(QueueStatus.STARTING)
+        await jobExecutor.signal(MockAction.STARTED, job2)
+        expect(await buildSystem.getStatus(job2)).toBe(QueueStatus.STARTED)
+        await jobExecutor.signal(MockAction.FAILURE, job2)
+        expect(await buildSystem.getStatus(job2)).toBeNull()
     })
 })
 
@@ -127,21 +133,6 @@ enum MockAction {
     SUCCEESS = "success",
     FAILURE = "failure",
     ERROR = "error"
-}
-
-class MockJobExecutorState {
-    constructor(public source: RepositorySource, public ref: JobRef, public sha: Refs.ShaRef) { }
-
-    equals(other: MockJobExecutorState): boolean {
-        return this.source.id === other.source.id && this.source.path === other.source.path &&
-            this.ref.type === other.ref.type && this.ref.ref === other.ref.ref &&
-            this.sha.sha === other.sha.sha
-    }
-
-    toString(): string {
-        return `${this.source.id}/${this.source.path}[${this.sha}]`
-    }
-
 }
 
 class MockActiveRepositories implements ActiveRepositories {
@@ -161,56 +152,53 @@ class MockActiveRepositories implements ActiveRepositories {
 }
 
 
-class MockJobExecutor implements JobExecutor {
-    log: MockJobExecutorState[] = []
-    private listener: JobExecutorListener | null = null
+class MockJobExecutor implements JobExecutor.Executor {
+    log: JobExecutor.Key[] = []
+    private listener: JobExecutor.Listener | null = null
 
-    startJob(source: RepositorySource, ref: JobRef, sha: Refs.ShaRef): Promise<void> {
-        let entry = new MockJobExecutorState(source, ref, sha)
-        console.log(`Got start job: ${entry.toString()}`)
-        this.log.push(entry)
+    startJob(job: JobExecutor.Key): Promise<void> {
+        console.log(`Got start job: ${job}`)
+        this.log.push(job)
         return Promise.resolve()
     }
-    abortJob(source: RepositorySource, ref: JobRef, sha: Refs.ShaRef): Promise<void> {
-        let entry = new MockJobExecutorState(source, ref, sha)
-        console.log(`Got abort job: ${entry.toString()}`)
-        this.log.push(entry)
+    abortJob(job: JobExecutor.Key): Promise<void> {
+        console.log(`Got abort job: ${job}`)
+        this.log.push(job)
         return Promise.resolve()
     }
 
-    private findIndex(source: RepositorySource, ref: JobRef, sha: Refs.ShaRef): number {
-        let lookfor = new MockJobExecutorState(source, ref, sha)
-        return _.findIndex(this.log, (entry: MockJobExecutorState) => {
-            return lookfor.equals(entry)
+    private findIndex(key: JobExecutor.Key): number {
+        return _.findIndex(this.log, (entry: JobExecutor.Key) => {
+            return key.equals(entry)
         })
     }
 
-    checkExists(source: RepositorySource, ref: JobRef, sha: Refs.ShaRef): boolean {
-        return this.findIndex(source, ref, sha) >= 0
+    checkExists(key: JobExecutor.Key): boolean {
+        return this.findIndex(key) >= 0
     }
 
-    signal(trigger: MockAction, source: RepositorySource, ref: JobRef, sha: Refs.ShaRef): void {
-        let index = this.findIndex(source, ref, sha)
+    signal(trigger: MockAction, key: JobExecutor.Key): void {
+        let index = this.findIndex(key)
         if (index >= 0) {
-            let entry = this.log[index]
+            let key = this.log[index]
             this.log = this.log.splice(index, 1)
             if (trigger === MockAction.STARTED) {
-                ensureDefined(this.listener).onJobStarted(entry.source, entry.ref, entry.sha)
+                ensureDefined(this.listener).onJobStarted(key)
             } else if (trigger === MockAction.SUCCEESS) {
-                ensureDefined(this.listener).onJobSuccess(entry.source, entry.ref, entry.sha)
+                ensureDefined(this.listener).onJobSuccess(key)
             } else if (trigger === MockAction.FAILURE) {
-                ensureDefined(this.listener).onJobFailure(entry.source, entry.ref, entry.sha)
+                ensureDefined(this.listener).onJobFailure(key)
             } else if (trigger === MockAction.ERROR) {
-                ensureDefined(this.listener).onJobError(entry.source, entry.ref, entry.sha)
+                ensureDefined(this.listener).onJobError(key)
             } else {
                 throw new Error(`Unknown action ${trigger}`)
             }
         } else {
-            throw new Error(`${source}:${sha} doesn't exist!`)
+            throw new Error(`${key} doesn't exist!`)
         }
     }
 
-    setListener(listener: JobExecutorListener): void {
+    setListener(listener: JobExecutor.Listener): void {
         this.listener = listener
     }
 }

@@ -2,8 +2,11 @@ import _ from 'lodash'
 import { SystemConfig } from "../config/system-config"
 import { Refs } from "../domain-model/refs"
 import { RepositorySource } from '../domain-model/repository-model/repository-source'
+import { BuildConfig } from '../domain-model/system-config/build-config'
+import { DependencyRef } from "../domain-model/system-config/dependency-ref"
 import { RepositoryConfig } from '../domain-model/system-config/repository-config'
 import { Version } from "../domain-model/version"
+import { LocalGitCommands } from '../git/local-git-commands'
 import { LocalGitFactory, LocalGitLoadMode } from "../git/local-git-factory"
 import { createLogger, loggerName } from "../logging/logging-factory"
 import { RedisFactory } from "../redis/redis-factory"
@@ -13,23 +16,19 @@ import { RepositoryAccessFactory } from "../repositories/repository-access/repos
 import { NormalizedModel, NormalizedModelUtil } from "../repositories/repository/normalized-model"
 import { VersionType } from "../repositories/repository/repository"
 import { RepositoryFactory } from "../repositories/repository/repository-factory"
-import { DependencyRef } from "../domain-model/system-config/dependency-ref"
 import { ScannerManager } from "../repositories/scanner/scanner-manager"
 import { SystemFilesAccess, SystemFilesAccessImpl } from "../repositories/system-files-access"
 import { createExecutionSerializer, ExecutionSerializer } from "./execution-serializer"
-import { JobExecutor, JobExecutorListener } from "./job-executor/job-executor"
+import { JobExecutor } from './job-executor/job-executor'
 import { JobRef, JobRefType } from "./job-executor/job-ref"
 import { ActiveRepositories } from "./queue/active-repositories"
 import { BuildState } from "./queue/build-state"
 import { buildQueue, Queue, QueueListener, QueueStatus } from "./queue/queue"
 import { Time } from "./time"
-import { LocalGitCommands } from '../git/local-git-commands'
-import { BuildConfig } from '../domain-model/system-config/build-config'
-import { abort } from 'process'
 
 export interface BuildSystem {
     onUpdate(update: Update): Promise<void>
-    getStatus(source: RepositorySource, ref: JobRef, sha: Refs.ShaRef): Promise<QueueStatus | null>
+    getStatus(key: JobExecutor.Key): Promise<QueueStatus | null>
     release(source: RepositorySource, branch: Refs.Branch, versionType: VersionType): Promise<Version>
 }
 
@@ -60,18 +59,15 @@ export class MetaData { }
 
 const logger = createLogger(loggerName(__filename))
 
-export class BuildSystemImpl implements BuildSystem, QueueListener, JobExecutorListener, UpdateReceiver {
+export class BuildSystemImpl implements BuildSystem, QueueListener, JobExecutor.Listener, UpdateReceiver {
     private queue: Queue
     private executionSerializer: ExecutionSerializer
     private systemFilesAccess: SystemFilesAccess
 
-    private static ABORT_KEY = `aborted:changes:`
-    private static ABORT_TTL = 120
-
     constructor(
         private redis: RedisFactory,
         time: Time,
-        private jobExecutor: JobExecutor,
+        private jobExecutor: JobExecutor.Executor,
         private repositoryAcccessFactory: RepositoryAccessFactory,
         private repositoryModelFactory: RepositoryFactory,
         private activeRepositories: ActiveRepositories,
@@ -87,67 +83,69 @@ export class BuildSystemImpl implements BuildSystem, QueueListener, JobExecutorL
     }
 
 
-    async getStatus(source: RepositorySource, ref: JobRef, sha: Refs.ShaRef): Promise<QueueStatus | null> {
-        return this.queue.getStatus(source, ref, sha).then(maybeBuildState => { return maybeBuildState?.current().status || null })
+    onJobStarted(job: JobExecutor.Key): void {
+        this.updateQueue(job, QueueStatus.STARTED)
     }
+    onJobError(job: JobExecutor.Key): void {
+        this.updateQueue(job, QueueStatus.ERROR)
+    }
+    onJobFailure(job: JobExecutor.Key): void {
+        this.updateQueue(job, QueueStatus.FAILURE)
+    }
+    onJobAborted(job: JobExecutor.Key): void {
+        this.updateQueue(job, QueueStatus.ABORTED)
+    }
+    onJobSuccess(job: JobExecutor.Key): void {
+        if (job.ref.type === JobRefType.UPDATE) {
+            logger.info(`Job success: ${job}`)
 
-    onJobStarted(source: RepositorySource, ref: JobRef, sha: Refs.ShaRef): void {
-        this.updateQueue(source, ref, sha, QueueStatus.STARTED)
-    }
-    onJobError(source: RepositorySource, ref: JobRef, sha: Refs.ShaRef): void {
-        this.updateQueue(source, ref, sha, QueueStatus.ERROR)
-    }
-    onJobFailure(source: RepositorySource, ref: JobRef, sha: Refs.ShaRef): void {
-        this.updateQueue(source, ref, sha, QueueStatus.FAILURE)
-    }
-    onJobAborted(source: RepositorySource, ref: JobRef, sha: Refs.ShaRef): void {
-        this.updateQueue(source, ref, sha, QueueStatus.ABORTED)
-    }
-    onJobSuccess(source: RepositorySource, ref: JobRef, sha: Refs.ShaRef): void {
-        if (ref.type === JobRefType.UPDATE) {
-            logger.info(`Jobs successful: ${source}/${ref.serialize()} ${sha}`)
-            this.systemFilesAccess.getRepositoryConfig(source).then(async repositoryConfig => {
+            this.systemFilesAccess.getRepositoryConfig(job.source).then(async repositoryConfig => {
                 if (repositoryConfig) {
-
-                    //TODO: Check labels on RepositoryConfig to get the correct action.
-                    const publications = <DependencyRef.ArtifactRef[]>(await this.publisherManager.publications(source, sha))
-                    await this.publisherManager.addMetaData(source, sha, publications)
-                    const repositoryAccess = this.repositoryAcccessFactory.createAccess(source.id)
-                    if (ref.type === JobRefType.UPDATE) {
-                        await repositoryAccess.setValidBuild(source.id, ref.ref, sha)
-                    }
-                    const action = repositoryConfig.buildAutomation.default
-                    logger.debug(`Job successful action: ${action} ${source}/${ref}`)
-                    if (action === RepositoryConfig.Action.Merge || action === RepositoryConfig.Action.Release) {
-                        repositoryAccess.merge(source.path, ref.ref)
-                            .then(async updatedBranch => {
-                                logger.info(`Merged ${source}/${ref} ${sha}`)
-                                return this.updateQueue(source, ref, sha, QueueStatus.SUCCEESS).then(() => {
-                                    return updatedBranch
-                                })
-                            })
-                            .then(updatedBranch => {
-                                if (action === RepositoryConfig.Action.Release) {
-                                    return this.release(source, updatedBranch, VersionType.MINOR).then(version => {
-                                        logger.info(`Released ${version.toString()} ${source}/${updatedBranch.ref}`)
+                    let isActive = await this.isActive(job)
+                    if (isActive) {
+                        //TODO: Check labels on RepositoryConfig to get the correct action.
+                        const publications = <DependencyRef.ArtifactRef[]>(await this.publisherManager.publications(job.source, job.sha))
+                        await this.publisherManager.addMetaData(job.source, job.sha, publications)
+                        const repositoryAccess = this.repositoryAcccessFactory.createAccess(job.source.id)
+                        if (job.ref.type === JobRefType.UPDATE) {
+                            await repositoryAccess.setValidBuild(job.source.id, job.ref.ref, job.sha)
+                        }
+                        const action = repositoryConfig.buildAutomation.default
+                        logger.debug(`Job successful action: [${action}] ${job}`)
+                        if (action === RepositoryConfig.Action.Merge || action === RepositoryConfig.Action.Release) {
+                            repositoryAccess.merge(job.source.path, job.ref.ref)
+                                .then(async updatedBranch => {
+                                    logger.info(`Merged ${job}`)
+                                    return this.updateQueue(job, QueueStatus.SUCCEESS).then(() => {
+                                        return updatedBranch
                                     })
-                                } else {
-                                    return Promise.resolve()
-                                }
-                            })
-                            .catch(error => {
-                                logger.error(`Could not merge ${source}/${ref.serialize()} ${sha}:${error}`)
-                                return Promise.reject(error)
-                            })
+                                })
+                                .then(updatedBranch => {
+                                    if (action === RepositoryConfig.Action.Release) {
+                                        return this.release(job.source, updatedBranch, VersionType.MINOR).then(version => {
+                                            logger.info(`Released ${version.toString()} ${job} (${updatedBranch.ref})`)
+                                        })
+                                    } else {
+                                        return Promise.resolve()
+                                    }
+                                })
+                                .catch(error => {
+                                    logger.error(`Could not merge ${job}:${error}`)
+                                    //return Promise.reject(error)
+                                })
+                        }
+                    } else {
+                        logger.debug(`${job} was registered aborted just before success. No processing.`)
                     }
                 } else {
-                    logger.warn(`Missing repository config for ${source}. No action taken.`)
+                    logger.warn(`Missing repository config for ${job.source}. No action taken.`)
                 }
             }).catch(e => {
-                this.updateQueue(source, ref, sha, QueueStatus.FAILURE)
+                this.updateQueue(job, QueueStatus.FAILURE)
             })
+
         } else {
-            this.updateQueue(source, ref, sha, QueueStatus.SUCCEESS)
+            this.updateQueue(job, QueueStatus.SUCCEESS)
         }
     }
 
@@ -168,17 +166,28 @@ export class BuildSystemImpl implements BuildSystem, QueueListener, JobExecutorL
         })
     }
 
-    private updateQueue(source: RepositorySource, ref: JobRef, sha: Refs.ShaRef, status: QueueStatus): Promise<void> {
-        logger.info(`JobManager->QueueUpdate ${source} ${sha} -> ${status}`)
-        return this.queue.addStatus(source, ref, sha, status)
+    private updateQueue(job: JobExecutor.Key, status: QueueStatus): Promise<void> {
+        logger.info(`JobManager->QueueUpdate ${job} -> ${status}`)
+        return this.queue.addStatus(job.source, job.ref, job.sha, status)
+    }
+
+    private async isActive(job: JobExecutor.Key): Promise<boolean> {
+        return this.queue.getStatus(job.source, job.ref, job.sha).then(status => {
+            return status ? true : false
+        })
+    }
+    getStatus(job: JobExecutor.Key): Promise<QueueStatus | null> {
+        return this.queue.getStatus(job.source, job.ref, job.sha).then(status => {
+            return status ? status.current().status : null
+        })
     }
 
     onQueueUpdated(source: RepositorySource, ref: JobRef, sha: Refs.ShaRef, buildState: BuildState): void {
-        const abortionKey = `${BuildSystemImpl.ABORT_KEY}:${source}:${ref}:${sha}`
         const cmd = async () => {
             return this.redis.get().then(async client => {
                 const status = buildState.current().status
-                logger.info(`Queue updated: ${source}/${ref.serialize()} ${sha} -> ${status}`)
+                const job = new JobExecutor.Key(source, ref, sha)
+                logger.info(`Queue updated: ${job} -> ${status}`)
                 if (status === QueueStatus.STARTING) {
                     if (ref.type === JobRefType.UPDATE) {
                         this.repositoryAcccessFactory.createAccess(source.id).rebase(source.path, ref.ref)
@@ -186,43 +195,40 @@ export class BuildSystemImpl implements BuildSystem, QueueListener, JobExecutorL
                                 if (newSha) {
                                     logger.info(`Rebased update ${ref} in ${source} sha: ${sha} -> ${newSha}. No more operations. Update event will abort current.`)
                                 } else {
-                                    //DUMMY IMPL. TO BE FIXED. Race condition in abortion signal comes to job executor before started. Needs new PREP state in Queue.
-                                    const aborted = (await client.get(abortionKey)) === "ABORTED"
-                                    if (!aborted) {
-                                        logger.debug(`Fast-forward possible for ${ref} in ${source} sha: ${sha}. Continue build start.`)
-                                        const dependencyTree = await this.scannerManager.allDependencies(source, sha)
-                                        const dependencyProblems = dependencyTree.getProblems()
+                                    logger.debug(`Fast-forward possible for ${ref} in ${source} sha: ${sha}. Continue build start.`)
+                                    const dependencyTree = await this.scannerManager.allDependencies(source, sha)
+                                    const dependencyProblems = dependencyTree.getProblems()
 
-                                        const dependencyTreeLog = [`***************** Dependency tree for ${source}/${sha}`]
-                                        dependencyTree.traverse((ref: DependencyRef.Ref, version: Version, depth: number) => {
-                                            dependencyTreeLog.push(`${_.repeat(" ", depth * 3)} ${ref.toString()}: ${version.asString()}`)
-                                        })
-                                        dependencyTreeLog.push(`***************** Problem count: ${dependencyProblems.length}`)
-                                        if (dependencyProblems.length) {
-                                            dependencyTreeLog.push(`Dependendency problems with ${source}/${sha}: ${dependencyProblems.map(p => { return p.asString() }).join(", ")}. Signalling dependency issue to queue.`)
-                                        }
-                                        console.log(dependencyTreeLog.join("\n"))
-                                        if (dependencyProblems.length) {
-                                            this.updateQueue(source, ref, sha, QueueStatus.DEPENDENCY)
-                                        } else {
-                                            this.jobExecutor.startJob(source, ref, sha)
-                                        }
+                                    const dependencyTreeLog = [`***************** Dependency tree for ${source}/${sha}`]
+                                    dependencyTree.traverse((ref: DependencyRef.Ref, version: Version, depth: number) => {
+                                        dependencyTreeLog.push(`${_.repeat(" ", depth * 3)} ${ref.toString()}: ${version.asString()}`)
+                                    })
+                                    dependencyTreeLog.push(`***************** Problem count: ${dependencyProblems.length}`)
+                                    if (dependencyProblems.length) {
+                                        dependencyTreeLog.push(`Dependendency problems with ${source}/${sha}: ${dependencyProblems.map(p => { return p.asString() }).join(", ")}. Signalling dependency issue to queue.`)
+                                    }
+                                    console.log(dependencyTreeLog.join("\n"))
+                                    if (dependencyProblems.length) {
+                                        this.updateQueue(job, QueueStatus.DEPENDENCY)
                                     } else {
-                                        logger.debug(`Abortion protection. Skip processing of Change: ${ref} in ${source} sha: ${sha}.`)
+                                        let isActive = await this.isActive(job)
+                                        if (isActive) {
+                                            this.jobExecutor.startJob(job)
+                                        } else {
+                                            logger.debug(`Job ${source}/${ref}/${ref} was aborted. No operation.`)
+                                        }
                                     }
                                 }
                             })
                             .catch(error => {
-                                logger.debug(`Error while rebasing update ${ref.ref} in ${source}: ${error}`)
-                                return this.updateQueue(source, ref, sha, QueueStatus.CONFLICT)
+                                logger.debug(`Error while rebasing update ${job}: ${error}`)
+                                return this.updateQueue(job, QueueStatus.CONFLICT)
                             })
                     } else {
                         throw new Error("Branch builds not implemented yet.")
                     }
                 } else if (status === QueueStatus.ABORTED) {
-                    //DUMMY IMPL. TO BE FIXED.
-                    await client.set(abortionKey, "ABORTED", "EX", BuildSystemImpl.ABORT_TTL)
-                    this.jobExecutor.abortJob(source, ref, sha)
+                    this.jobExecutor.abortJob(job)
                 }
             })
 

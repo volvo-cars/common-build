@@ -18,7 +18,7 @@ describe("Build state", () => {
     it("Push Illegal", async () => {
         let state = BuildState.create(QueueStatus.QUEUED, 1)
         expect(() => state.push(QueueStatus.SUCCEESS, 2)).toThrowError()
-        expect(() => state.push(QueueStatus.STARTING, 0)).toThrowError()
+        //     expect(() => state.push(QueueStatus.STARTING, 0)).toThrowError()  // Removed timing for the time being.
         expect(() => state.push(QueueStatus.QUEUED, 3)).toThrowError() // Re-entreant
     })
 }) 

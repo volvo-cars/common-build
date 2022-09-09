@@ -59,23 +59,9 @@ export class GerritRepositoryAccess extends AbstractRepositoryAccess {
         }
     }
 
-    async getProjectLabels(repository: RepositoryPath): Promise<LabelDefinitionInfo[]> {
-        return this.createGerritRequest(`projects/{${repository}}/labels?inherited`, HttpMethod.GET, null).then(async response => {
-            if (response.status === 200) {
-                const labelInfos = <LabelDefinitionInfo[]>gerritJsonResponseDecode(response.data)
-                return Promise.resolve(labelInfos)
-            } else {
-                return Promise.reject(new Error(`Error while fetching available labels from [${repository}]`)) // Other error
-            }
-        }).catch((error: AxiosError) => {
-            logger.error(`Could not fetch labels on ${repository}: ${error.response?.status} ${error.response?.data}`)
-            return Promise.reject(error)
-        })
-    }
-
     async merge(repository: RepositoryPath, updateId: UpdateId): Promise<Refs.Branch> {
         const update = await this.internalGetChange(updateId)
-        const availableLabels = await this.getProjectLabels(repository)
+        const availableLabels = await this.internalGetProjectLabels(repository)
         const labelsToSet = availableLabels.reduce((acc: Record<string, number>, next: LabelDefinitionInfo) => {
             const labelName = next.name
             const highestValue = _.max(Object.keys(next.values).map(v => { return parseInt(v) }))
@@ -160,15 +146,16 @@ export class GerritRepositoryAccess extends AbstractRepositoryAccess {
             project: repository,
             subject: `CommonBuild update: ${content.map(c => { return c.path }).join(",")}`,
             branch: target.name,
-            status: "NEW"
+            status: "NEW",
+            is_private: true
         }).then(async response => {
             if (response.status === 201) {
                 let change = <ChangeInfo>gerritJsonResponseDecode(response.data)
                 await this.internalSetHashTags(change.change_id, labels)
-                await this.internalUpsertFileContent(change.change_id, content)
-                return Promise.resolve(
-                    change.change_id
-                )
+                await this.createGerritRequest(`changes/${change.change_id}/private`, HttpMethod.DELETE)
+                return this.internalUpsertFileContent(change.change_id, content).then(() => {
+                    return change.change_id
+                })
             } else {
                 return Promise.reject(new Error(`Could not create update to ${target.name} in ${this.config.id}/${repository} ${response.status}`))
             }
@@ -181,6 +168,19 @@ export class GerritRepositoryAccess extends AbstractRepositoryAccess {
         return this.internalUpsertFileContent(updateId, content)
     }
 
+    private async internalGetProjectLabels(repository: RepositoryPath): Promise<LabelDefinitionInfo[]> {
+        return this.createGerritRequest(`projects/{${repository}}/labels?inherited`, HttpMethod.GET, null).then(async response => {
+            if (response.status === 200) {
+                const labelInfos = <LabelDefinitionInfo[]>gerritJsonResponseDecode(response.data)
+                return Promise.resolve(labelInfos)
+            } else {
+                return Promise.reject(new Error(`Error while fetching available labels from [${repository}]`)) // Other error
+            }
+        }).catch((error: AxiosError) => {
+            logger.error(`Could not fetch labels on ${repository}: ${error.response?.status} ${error.response?.data}`)
+            return Promise.reject(error)
+        })
+    }
 
     async internalUpsertFileContent(updateId: UpdateId, content: Content[]): Promise<void> {
         const cmd = async () => {
@@ -210,7 +210,7 @@ export class GerritRepositoryAccess extends AbstractRepositoryAccess {
     }
 
     async internalSetHashTags(updateId: UpdateId, tags: string[]): Promise<void> {
-        if (tags) {
+        if (tags.length) {
             return this.createGerritRequest(`changes/${updateId}/hashtags`, HttpMethod.POST, {
                 add: tags,
                 remove: []
@@ -288,6 +288,7 @@ export type ChangeInfo = {
     status: ChangeInfoStatus,
     labels?: Record<string, LabelInfo>,
     hashtags?: string[],
+    is_private?: boolean,
     _number: number
 }
 

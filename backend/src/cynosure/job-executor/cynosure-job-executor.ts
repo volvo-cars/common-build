@@ -1,45 +1,19 @@
-import { Refs } from "../../domain-model/refs";
-import { RepositorySource } from "../../domain-model/repository-model/repository-source";
+import _ from 'lodash';
+import { ShutdownManager } from '../../shutdown-manager/shutdown-manager'
 import { createLogger, loggerName } from "../../logging/logging-factory";
-import { JobExecutor, JobExecutorListener } from "../../system/job-executor/job-executor";
-import { JobRef } from "../../system/job-executor/job-ref";
-import { CynosureProtocol } from "../cynosure-api-connector/cynosure-api-connector";
-import { CynosureApiConnectorFactory } from "../cynosure-api-connector/cynosure-api-connector-factory";
+import { JobExecutor } from '../../system/job-executor/job-executor';
 import { TaskQueue } from "../../task-queue/task-queue";
 import { Duration, Time } from "../../task-queue/time";
-import _, { every } from 'lodash'
+import { CynosureProtocol } from "../cynosure-api-connector/cynosure-api-connector";
+import { CynosureApiConnectorFactory } from "../cynosure-api-connector/cynosure-api-connector-factory";
 import { ProcessingStates } from "./processing-states";
-import { RedisFactory } from "../../redis/redis-factory";
 
 const logger = createLogger(loggerName(__filename))
-
-class JobKey {
-    constructor(public readonly source: RepositorySource, public readonly ref: JobRef, public readonly sha: Refs.ShaRef) { }
-    private static DELIMITER = "|"
-    serialize(): string {
-        return `${this.source.asString()}${JobKey.DELIMITER}${this.ref.serialize()}${JobKey.DELIMITER}${this.sha.sha}`
-    }
-    toString(): string {
-        return `Job: ${this.source} ${this.ref} ${this.sha.sha}`
-    }
-    static deserialize(serialized: string): JobKey {
-        const [source, ref, sha] = serialized.split(JobKey.DELIMITER)
-        return new JobKey(RepositorySource.createFromString(source), JobRef.deserialize(ref), Refs.ShaRef.create(sha))
-    }
-}
 
 class WaitRetryConfig {
     constructor(
         public readonly retryCount: number,
         public readonly wait: Duration
-    ) { }
-}
-
-class StateConfig {
-    constructor(
-        public readonly runConfig: WaitRetryConfig,
-        public readonly waitConfig: WaitRetryConfig,
-        public readonly errorConfig: WaitRetryConfig
     ) { }
 }
 
@@ -68,39 +42,53 @@ const Constants = {
     }
 }
 
-export class CynosureJobExecutor implements JobExecutor {
+export class CynosureJobExecutor implements JobExecutor.Executor, ShutdownManager.Service {
 
     private processTimer: ReturnType<typeof setTimeout> | undefined
 
+    public serviceName = `Cynosure Job Executor`
+
+    public shutdownPriority = 20;
+
+
+
     constructor(private cynosureApiConnectorFactory: CynosureApiConnectorFactory, private taskQueue: TaskQueue.Service) { }
 
-    private listener: JobExecutorListener | null = null
+    private listener: JobExecutor.Listener | null = null
+    private active: boolean = true
+    private currentProcess: Promise<any> | undefined
 
-
+    shutdown(): Promise<void> {
+        this.active = false
+        clearTimeout(this.processTimer)
+        return (this.currentProcess || Promise.resolve())
+    }
 
     private scheduleProcess(wait: Duration) {
-        clearTimeout(this.processTimer)
-        this.processTimer = setTimeout(() => {
-            this.process().then(directReschedule => {
-                if (directReschedule) {
-                    this.scheduleProcess(Constants.REPOLL.direct)
-                } else {
-                    this.scheduleProcess(Constants.REPOLL.delayed)
-                }
-            })
-        }, wait.milliSeconds())
+        if (this.active) {
+            clearTimeout(this.processTimer)
+            this.processTimer = setTimeout(() => {
+                this.currentProcess = this.process().then(directReschedule => {
+                    if (directReschedule) {
+                        this.scheduleProcess(Constants.REPOLL.direct)
+                    } else {
+                        this.scheduleProcess(Constants.REPOLL.delayed)
+                    }
+                })
+            }, wait.milliSeconds())
+        }
     }
 
     private process(): Promise<boolean> { // true = direct reschedule, false delayed reschedule
         const listener = this.listener
         if (listener) {
-            const handleError = (e: Error, uid: string, key: JobKey, state: ProcessingStates.JobState, config: WaitRetryConfig): Promise<void> => {
+            const handleError = (e: Error, uid: string, key: JobExecutor.Key, state: ProcessingStates.JobState, config: WaitRetryConfig): Promise<void> => {
                 if (state.failureCount < config.retryCount) {
                     logger.warn(`Wait in [${state.constructor.name}] for ${key} (${e}). Rescheduling retry ${state.failureCount + 1}/${config.retryCount}.`)
                     return this.taskQueue.upsert(uid, config.wait, state.withNewFailure().serialize())
                 } else {
                     logger.warn(`Error in [${state.constructor.name}] for ${key}. No more retries of ${config.retryCount}. Signalling JobError.`)
-                    listener.onJobError(key.source, key.ref, key.sha)
+                    listener.onJobError(key)
                     return Promise.resolve()
                 }
             }
@@ -109,7 +97,7 @@ export class CynosureJobExecutor implements JobExecutor {
             return this.taskQueue.popExpired(2, Time.now()).then(entries => {
                 if (entries.entries.length) {
                     return Promise.all(entries.entries.map(entry => {
-                        const key = JobKey.deserialize(entry.uid)
+                        const key = JobExecutor.Key.deserialize(entry.uid)
                         const connector = this.cynosureApiConnectorFactory.createApiConnector(key.source.id)
                         if (connector) {
                             const states = entry.data.map(s => { return ProcessingStates.JobState.deserialize(s) })
@@ -156,7 +144,7 @@ export class CynosureJobExecutor implements JobExecutor {
                                 return connector.findActivity(startingState.productId, key.sha).then(activity => {
                                     if (activity) {
                                         logger.info(`Started Cynosure Activity ${key} -> Product: ${startingState.productId} Activity: ${activity.activityId}`)
-                                        listener.onJobStarted(key.source, key.ref, key.sha)
+                                        listener.onJobStarted(key)
                                         return this.taskQueue.upsert(entry.uid, Constants.STARTED.pollInterval, new ProcessingStates.JobStarted(startingState.productId, activity.activityId, 0).serialize())
                                     } else {
                                         return handleError(new Error(`Could not find activity.`), entry.uid, key, startingState, Constants.STARTING.findActivity)
@@ -171,24 +159,24 @@ export class CynosureJobExecutor implements JobExecutor {
                                         logger.debug(`Cynosure activity poll ${key} Cynosure: ${startedState.productId}/${activity.activityId}: State: ${activity.state} Verdict:${activity.verdict}`)
                                         if (activity.state === CynosureProtocol.ActivityState.FINISHED) {
                                             if (activity.verdict === CynosureProtocol.ActivityVerdict.PASSED) {
-                                                listener.onJobSuccess(key.source, key.ref, key.sha)
+                                                listener.onJobSuccess(key)
                                                 return Promise.resolve()
                                             } else if (activity.verdict === CynosureProtocol.ActivityVerdict.ABORTED) {
                                                 logger.debug(`Cynosure aborted job: ${key} Cynosure: ${startedState.productId}/${activity.activityId}`)
-                                                listener.onJobAborted(key.source, key.ref, key.sha)
+                                                listener.onJobAborted(key)
                                                 return Promise.resolve()
                                             } else if (activity.verdict === CynosureProtocol.ActivityVerdict.FAILED) {
-                                                listener.onJobFailure(key.source, key.ref, key.sha)
+                                                listener.onJobFailure(key)
                                                 return Promise.resolve()
                                             } else if (activity.verdict === CynosureProtocol.ActivityVerdict.ERRORED) {
-                                                listener.onJobError(key.source, key.ref, key.sha)
+                                                listener.onJobError(key)
                                                 return Promise.resolve()
                                             } else if (activity.verdict === CynosureProtocol.ActivityVerdict.SKIPPED) {
                                                 logger.warn(`Cynosure skipped job: ${key} Cynosure: ${startedState.productId}/${activity.activityId}. No transition for skipped. Sending aborted to queue.`)
-                                                listener.onJobAborted(key.source, key.ref, key.sha)
+                                                listener.onJobAborted(key)
                                             } else {
                                                 logger.debug(`Unknown final state from Cynosure: ${activity.state}: Signalling error to job. ${key}`)
-                                                listener.onJobError(key.source, key.ref, key.sha)
+                                                listener.onJobError(key)
                                                 return Promise.resolve()
                                             }
                                         } else {
@@ -203,7 +191,7 @@ export class CynosureJobExecutor implements JobExecutor {
                             }
                         } else {
                             logger.debug(`Cynosure API connector not found ${key}. Removing job.`)
-                            listener.onJobError(key.source, key.ref, key.sha)
+                            listener.onJobError(key)
                             return Promise.resolve()
                         }
                     })).then(() => {
@@ -220,22 +208,19 @@ export class CynosureJobExecutor implements JobExecutor {
         }
     }
 
-    startJob(source: RepositorySource, ref: JobRef, sha: Refs.ShaRef): Promise<void> {
-        const key = new JobKey(source, ref, sha)
-        logger.debug(`Cynosure JobManager -> Start message ${key}`)
+    startJob(key: JobExecutor.Key): Promise<void> {
         return this.taskQueue.upsert(key.serialize(), Duration.NO_DURATION, new ProcessingStates.JobQueued(0).serialize()).finally(() => {
             this.scheduleProcess(Duration.NO_DURATION)
         })
     }
-    abortJob(source: RepositorySource, ref: JobRef, sha: Refs.ShaRef): Promise<void> {
-        const key = new JobKey(source, ref, sha)
-        logger.debug(`Cynosure JobManager -> Abort message ${key}`)
+    abortJob(key: JobExecutor.Key): Promise<void> {
         return this.taskQueue.upsert(key.serialize(), Duration.NO_DURATION, new ProcessingStates.JobAbort("Newer commit.").serialize()).finally(() => {
             this.scheduleProcess(Duration.NO_DURATION)
         })
     }
 
-    setListener(listener: JobExecutorListener): void {
+    setListener(listener: JobExecutor.Listener): void {
+        logger.debug("Setting listener. Starting Poll.")
         this.listener = listener
         this.scheduleProcess(Duration.NO_DURATION)
     }

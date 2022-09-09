@@ -33,6 +33,25 @@ export namespace LocalGitCommands {
         return GetBranchesAndTags.CMD
     }
 
+    class GetBranch implements GitFunction<Refs.Branch | undefined> {
+        public readonly description
+        constructor(private name: string) {
+            this.description = `${this.constructor.name} ${name}`
+        }
+        execute(git: SimpleGit, context: GitOpContext): Promise<Refs.Branch | undefined> {
+            return git.raw(['rev-parse', `origin/${this.name}`]).then(output => {
+                return Refs.Branch.createWithSha(this.name, Refs.ShaRef.create(output))
+            }).catch(e => {
+                return undefined
+            })
+        }
+        public static CMD = new GetBranchesAndTags()
+    }
+
+    export const getBranch = (name: string): GitFunction<Refs.Branch | undefined> => {
+        return new GetBranch(name)
+    }
+
 
     class GetFile implements GitFunction<string | null> {
         public readonly description
