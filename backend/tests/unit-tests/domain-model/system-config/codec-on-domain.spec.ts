@@ -14,7 +14,7 @@ describe("Test codec on domain", () => {
                 new BuildConfig.BuildCompose.NodeCommand("echo hello2 > test.txt && ls -l", "dev")
             ]
         )
-        const build = new BuildConfig.Build([step], undefined)
+        const build = new BuildConfig.Build([step])
         const config = new BuildConfig.Config(build, "latest")
 
         const encoded = Codec.toPlain(config)

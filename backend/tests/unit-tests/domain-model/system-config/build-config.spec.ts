@@ -30,7 +30,7 @@ describe("Test Ref", () => {
                 new BuildConfig.BuildDockerBuild.Step("vcc/common-build", "docker/vcc-common-build.dockerfile", undefined, undefined),
                 new BuildConfig.BuildNative.Step("sign it")
 
-                ], undefined
+                ]
             )
         )
         const json = JSON.stringify(instanceToPlain(config), null, 2)
@@ -57,7 +57,7 @@ describe("Test Ref", () => {
                         new BuildConfig.BuildCompose.NodeCommand("cmake ..", "dev"),
                         new BuildConfig.BuildCompose.NodeCommand("make", "dev"),
                     ])
-                ], undefined
+                ]
             )
         )
         const json = JSON.stringify(instanceToPlain(config), null, 2)
