@@ -1,7 +1,7 @@
 {
-  "name": "work",
-  "version": "1.0.0",
-  "description": "",
+  "name": "common-build-backend",
+  "version": "0.1.0",
+  "description": "TODO: Niclas",
   "main": "index.js",
   "scripts": {
     "start:dev": "nodemon -- --config config-local.yaml",
@@ -13,11 +13,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "ssh://nlindbe2@csp-gerrit-ssh.volvocars.net/ci/onebuild"
+    "url": "https://github.com/volvo-cars/common-build.git",
+    "directory": "backend"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": ["common-build"],
+  "author": "Niclas Lindberg <nlindbe2@volvocars.com>",
+  "license": "Apache-2.0",
   "devDependencies": {
     "@types/jest": "^27.4.1",
     "@types/node": "^17.0.21",

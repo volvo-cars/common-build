@@ -1,7 +1,9 @@
 {
   "name": "common-build",
   "version": "0.1.0",
-  "private": true,
+  "description": "TODO: Niclas",
+  "author": "Niclas Lindberg <nlindbe2@volvocars.com>",
+  "license": "Apache-2.0",
   "dependencies": {
     "@testing-library/jest-dom": "^5.16.4",
     "@testing-library/react": "^13.2.0",
