@@ -164,7 +164,7 @@ Navigate to [victoria.volvocars.biz](https://victoria.volvocars.biz) and check t
 
 
 
-# Lesson 6 - Configure automatic releases.
+# Lesson 5 - Configure automatic releases.
 You may define automatic rules to be applied to Changes after a successful build.
 The possible values are:
 
@@ -180,7 +180,7 @@ Do the same configuration for `playground/workshop_<CDSID>_2` project.
 
 After you have verified that a new version was automatically released for `playground/workshop_<CDSID>_1` you should enter Cynosure to verify that a new Change was created in `playground/workshop_<CDSID>_2`. This is due to the automatic dependency management of Common-Build. After a while you should see a new release in `playground/workshop_<CDSID>_2` by executing `git pull -tags` in the terminal.
 
-# Lesson 8 - Using secrets
+# Lesson 6 - Using secrets
 Secrets are stored in Vault and Common-Build supports fetching secrets and mount them in a standard way in when the docker container starts.
 
 > Task: Navigate to [winterfell.csp-dev.net](https://winterfell.csp-dev.net/ui/vault/secrets/csp/show/playground) and create the secret `csp/playground/workshop_<CDSID>_1`. Then update your `build.yml` to define the secrets:
