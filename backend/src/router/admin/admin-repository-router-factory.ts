@@ -1,6 +1,8 @@
 import HttpStatusCodes from 'http-status-codes'
 import koaBodyParser from "koa-bodyparser"
 import Router from "koa-router"
+import { CynosureApiConnector } from '../../cynosure/cynosure-api-connector/cynosure-api-connector'
+import { CynosureApiConnectorFactory } from '../../cynosure/cynosure-api-connector/cynosure-api-connector-factory'
 import { ApiRepository } from "../../domain-model/api/repository"
 import { Refs } from '../../domain-model/refs'
 import { Codec } from "../../domain-model/system-config/codec"
@@ -16,7 +18,7 @@ import { RouterFactory } from "../router-factory"
 const logger = createLogger(loggerName(__filename))
 
 export class AdminRepositoryRouterFactory implements RouterFactory {
-    constructor(private systemFilesAccess: SystemFilesAccess, private buildSystem: BuildSystem, private repositoryAccessFactory: RepositoryAccessFactory, private repositoryModelFactory: RepositoryFactory) { }
+    constructor(private systemFilesAccess: SystemFilesAccess, private buildSystem: BuildSystem, private repositoryAccessFactory: RepositoryAccessFactory, private repositoryModelFactory: RepositoryFactory, private cynosureApiConnectorFactory: CynosureApiConnectorFactory) { }
 
     buildRouter(): Promise<Router> {
         const router = new Router({ prefix: "/repository" })
@@ -25,6 +27,24 @@ export class AdminRepositoryRouterFactory implements RouterFactory {
             const request = Codec.toInstance(ctx.request.body, ApiRepository.SourceRequest)
             const model = (await this.repositoryModelFactory.get(request.source).modelReader()).model
             ctx.body = Codec.toPlain(new ApiRepository.ModelResponse(model))
+        })
+        router.post("/buildConfig", async (ctx) => {
+            const request = Codec.toInstance(ctx.request.body, ApiRepository.BuildConfigRequest)
+            const source = request.source
+            const connector = this.cynosureApiConnectorFactory.createApiConnector(source.id)
+            if (connector) {
+                return connector.findProductId(source.path).then(productId => {
+                    if (productId) {
+                        ctx.body = Codec.toPlain(new ApiRepository.BuildConfigResponse(new ApiRepository.BuildSystemInfo(`https://victoria.volvocars.biz/product/${productId}`, "Cynosure")))
+                    } else {
+                        ctx.response.status = HttpStatusCodes.NOT_FOUND
+                        ctx.body = `Could not find product in Cynosure for ${source}`
+                    }
+                })
+            } else {
+                ctx.response.status = HttpStatusCodes.NOT_FOUND
+                ctx.body = `Could not find Cynosure connector for source: ${source.id}`
+            }
         })
         router.post("/release", async (ctx) => {
             const request = Codec.toInstance(ctx.request.body, ApiRepository.ReleaseRequest)

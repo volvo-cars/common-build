@@ -150,4 +150,38 @@ export namespace ApiRepository {
         }
     }
 
+    export class BuildConfigRequest {
+        @Expose()
+        @Type(() => RepositorySource)
+        public source: RepositorySource
+
+        constructor(source: RepositorySource) {
+            this.source = source
+        }
+
+    }
+
+    export class BuildSystemInfo {
+        @Expose()
+        public buildSystemUrl: string
+
+        @Expose()
+        public buildSystemName: string
+
+        constructor(buildSystemUrl: string, buildSystemName: string) {
+            this.buildSystemUrl = buildSystemUrl
+            this.buildSystemName = buildSystemName
+        }
+    }
+
+    export class BuildConfigResponse {
+        @Expose()
+        @Type(() => BuildSystemInfo)
+        public buildSystemInfo: BuildSystemInfo
+
+        constructor(buildSystemInfo: BuildSystemInfo) {
+            this.buildSystemInfo = buildSystemInfo
+        }
+    }
+
 }

@@ -1,9 +1,15 @@
+import { AxiosResponse } from 'axios'
+import { useEffect, useState } from 'react'
 import { Col, Row } from 'react-bootstrap'
 import { NavLink, Route, Routes, useParams } from "react-router-dom"
+import { ApiRepository } from '../domain-model/api/repository'
+import { Codec } from '../domain-model/system-config/codec'
+import { Http, HttpMethod } from '../utils/http'
 import { RepositorySourceUtil } from '../utils/repository-source-util'
 import { GlobalConfigView } from './global-configuration/global-config-view'
 import { RepositoryState } from './repository-state/repository-state'
-
+import { FaExternalLinkAlt as ExternalIcon } from 'react-icons/fa';
+import { Styles } from '../Styles'
 export const RepositoryViewContainer = () => {
     const params = useParams()
 
@@ -12,15 +18,33 @@ export const RepositoryViewContainer = () => {
         fontWeight: "bold",
     };
 
-    console.log(source)
+    const [buildSystemInfo, setBuildSystemInfo] = useState<ApiRepository.BuildSystemInfo | undefined>()
+
+    useEffect(() => {
+        if (source) {
+            Http.createRequest("/api/repository/buildConfig", HttpMethod.POST).setData(new ApiRepository.BuildConfigRequest(source)).execute().then((rawResponse: AxiosResponse<any>) => {
+                const response = Codec.toInstance(rawResponse.data, ApiRepository.BuildConfigResponse)
+                setBuildSystemInfo(response.buildSystemInfo)
+            })
+        }
+    }, [source?.id, source?.path])
+
     if (source) {
         return (
             <>
                 <Row>
-                    <Col>
-                        <h3>{source.path}
-                            <div><small>{source.id}</small></div>
-                        </h3>
+                    <Col xs={12}>
+                        <h4>{source.path}@{source.id}</h4>
+                        {buildSystemInfo &&
+                            <div style={{ marginBottom: 20 }}>
+                                <small>
+                                    <a href={buildSystemInfo.buildSystemUrl} target="_blank">{buildSystemInfo.buildSystemName} <ExternalIcon style={Styles.Icon} /></a>
+                                </small>
+                            </div>
+                        }
+                    </Col>
+                    <Col xs={12}>
+                        <div style={{ paddingTop: 10, marginTop: 10, borderTop: "1px solid #0f7cea" }} />
                     </Col>
                 </Row>
                 <Row className="gx-5 mb-2">

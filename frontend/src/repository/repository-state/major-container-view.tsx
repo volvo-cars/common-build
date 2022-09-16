@@ -18,30 +18,38 @@ export const MajorContainerView = ({ source, major, onRelease, onPatch }: Props)
     const historicMajor = (major instanceof RepositoryModel.MajorContainer) ? major as RepositoryModel.MajorContainer : undefined
 
     return (
-        <Row className="align-items-center mt-1 mb-1 border-bottom">
-            <Col xs={2}><h4>{major.major}</h4><div><small>Last: <LastVersion major={major} /></small></div></Col>
-            {mainMajor &&
-                <>
-                    <Col xs={2}><BranchLink source={source} branchName={mainMajor.main.name} exists={true} /></Col>
-                    <Col xs={4}>
-                        <ButtonGroup>
-                            <ReleaseButton branchSha={mainMajor.main.sha} major={mainMajor} onClick={() => onRelease(mainMajor.main.sha)} />
-                        </ButtonGroup>
-                    </Col>
-                </>
-            }
-            {historicMajor &&
-                <>
-                    <Col xs={2}><BranchLink source={source} branchName={`patch-${historicMajor.major}`} exists={historicMajor.branch ? true : false} /></Col>
-                    <Col xs={4}>
-                        <ButtonGroup>
-                            <ReleaseButton branchSha={historicMajor.branch} major={historicMajor} onClick={() => onRelease(historicMajor.branch)} />
-                            <CreatePatchButton major={historicMajor} onClick={onPatch || (() => { })} />
-                        </ButtonGroup>
-                    </Col>
-                </>
-            }
-        </Row>
+        <>
+            <Row className="align-items-center mt-1 mb-1">
+                <Col xs={2}><span style={{ fontSize: 30 }}>{major.major}</span></Col>
+                {mainMajor &&
+                    <>
+
+                        <Col xs={2}><BranchLink source={source} branchName={mainMajor.main.name} exists={true} /></Col>
+                        <Col xs={4}>
+                            <ButtonGroup>
+                                <ReleaseButton branchSha={mainMajor.main.sha} major={mainMajor} onClick={() => onRelease(mainMajor.main.sha)} />
+                            </ButtonGroup>
+                        </Col>
+                    </>
+                }
+                {historicMajor &&
+                    <>
+                        <Col xs={2}><BranchLink source={source} branchName={`patch-${historicMajor.major}`} exists={historicMajor.branch ? true : false} /></Col>
+                        <Col xs={4}>
+                            <ButtonGroup>
+                                <ReleaseButton branchSha={historicMajor.branch} major={historicMajor} onClick={() => onRelease(historicMajor.branch)} />
+                                <CreatePatchButton major={historicMajor} onClick={onPatch || (() => { })} />
+                            </ButtonGroup>
+                        </Col>
+                    </>
+                }
+            </Row>
+            <Row className="align-items-center mt-1 mb-1 border-bottom">
+                <Col>
+                    <div><small>Latest release <LastVersion major={major} /></small></div>
+                </Col>
+            </Row>
+        </>
     )
 }
 
