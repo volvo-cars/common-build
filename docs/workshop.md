@@ -189,13 +189,13 @@ Secrets are stored in Vault and Common-Build supports fetching secrets and mount
 toolImage: artcsp-docker.ara-artifactory.volvocars.biz/vcc/common-build-agent:0.12.0
 version: 1
 build:
-  secrets:
-    myTopSecret: csp/playground/workshop_<CDSID>_1  
   steps:
     - type: compose
       nodes:
         image1:
           image: ubuntu:20.04
+      secrets:
+        myTopSecret: csp/playground/workshop_<CDSID>_1
       commands:
         - cmd: | 
             echo Hello world!
@@ -231,13 +231,13 @@ COPY build/hello.py /root/hello.py
 toolImage: artcsp-docker.ara-artifactory.volvocars.biz/vcc/common-build-agent:0.12.0
 version: 1
 build:
-  secrets:
-    myTopSecret: csp/playground/workshop_<CDSID>_1  
   steps:
     - type: compose
       nodes:
         image1:
           image: ubuntu:20.04
+      secrets:
+        myTopSecret: csp/playground/workshop_<CDSID>_1      
       commands:
         - cmd: | 
             echo Some fake build
