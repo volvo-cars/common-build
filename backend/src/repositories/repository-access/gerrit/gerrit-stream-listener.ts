@@ -128,7 +128,12 @@ export class GerritStreamListener implements ShutdownManager.Service {
                 <ConnectConfig>{
                     host: this.listenerConfig.config.ssh,
                     username: this.listenerConfig.user,
-                    privateKey: this.listenerConfig.key
+                    privateKey: this.listenerConfig.key,
+                    /** How often (in milliseconds) to send SSH-level keepalive packets to the server. Set to 0 to disable. */
+                    keepaliveInterval: 10 * 1000,
+                    /** How many consecutive, unanswered SSH-level keepalive packets that can be sent to the server before disconnection. */
+                    keepaliveCountMax: 1,
+                    readyTimeout: 10 * 1000
                 }
             )
             this.client = client
