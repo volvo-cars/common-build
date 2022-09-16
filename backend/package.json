@@ -10,7 +10,7 @@
     "start:prod": "node dist/index.js --config config-local.yaml",
     "test": "jest --coverage --detectOpenHandles",
     "test:watch": "jest --watch",
-    "update-notice": "npx generate-license-file --input package.json --output NOTICE.txt --overwrite"
+    "update-notice": "npx generate-license-file --input package.json --output NOTICE.md --overwrite"
   },
   "repository": {
     "type": "git",

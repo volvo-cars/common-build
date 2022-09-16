@@ -34,7 +34,7 @@
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject",
-    "update-notice": "npx generate-license-file --input package.json --output NOTICE.txt --overwrite"
+    "update-notice": "npx generate-license-file --input package.json --output NOTICE.md --overwrite"
   },
   "eslintConfig": {
     "extends": [
