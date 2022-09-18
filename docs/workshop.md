@@ -1,18 +1,16 @@
 # Common-Build Workshop
 
-The Common-Build workshop is a training where we will configure a simple build for a singe repository and then extend the simple model by using more advanced features of Common-Build.
+The Common-Build workshop is a training where we will configure a simple build for a single repository and then extend the model by using more advanced features of Common-Build.
 
 ## Lesson 0 - preparations
 This workshop contains practical exercises. In order to follow these exercises the following preparation work has to be completed.
 
 1. Create a new repository on [csp-gerrit.volvocars.biz](https://csp-gerrit.volvocars.biz) with name `playground/workshop_<CDSID>_1`. Clone it with standard hooks to your local environment.
 
-2. Navigate to [victoria.volvocars.biz](https://victoria.volvocars.biz) and search for your *Source product* `playground/workshop_<CDSID>_1`. 
-
-3. Press the small cogwheel, in the bottom of the left pane, to configure your repository in Cynosure. Complete the following to configurations:
+2. Navigate to [victoria.volvocars.biz](https://victoria.volvocars.biz) and search for your *Source product* `playground/workshop_<CDSID>_1` in the search field. Press the small cogwheel, in the bottom left pane, to configure your repository in Cynosure. Complete the following to configurations:
     
     *  *Access section* must be filled out with your [Gerrit public key](https://csp-gerrit.volvocars.biz/settings/#SSHKeys)
-    * Activate the option *Watch for Cynosure Drive files*.
+    * Activate the option *Use SHA1 as ProductId.instance*.
 
 ## Lesson 1 - build.yml
 For a Git repository to become a Common-Build configured repository it must contain the file `.common-build/build.yml`. 
@@ -34,12 +32,12 @@ build:
             source /etc/os-release                #Defines the VERSION env var with OS version.
             echo Hello world from Ubuntu $VERSION.
 ```
-A simple build.yml file with one container and two commands; ne simple- and one multi line command.
+A `build.yml` file containing one image and two commands executing on it. For more complex scenarios you may add more images (like persistence) that would run in parallel. 
 
-> Task: Navigate to your project page on Cynosure to see your build. Navigating the logs you should see the print out from the execution of commands and the final verdict of your build should be passed.
+> Task: Navigate to your project page on Cynosure to see your build. Browse the logs and you should see the print out from the execution of commands and the final verdict of your build should be **passed**.
 
 ## Lesson 2 - publish.yml
-Common-build has declarative publication of artifacts. 
+Common-build has declarative publication of artifacts. I.e. we declare what files should be picked up after a successful build and published to artifactory.
 
 > Task: Add the following files in the given structure to your repository
 
@@ -66,7 +64,7 @@ artifacts:
 > Task: Commit and push the commit to `HEAD:refs/for/master`. 
 The build should now publish the declared artifact with the following files in Artifactory:
 
-* `directory.tar.gz` (Common-Build automatically packs the directory into a `.tar.gz`).
+* `directory.tar.gz` (Common-Build automatically packs the directory into a `.tar.gz` with the last segment as name).
 * `singlefile.txt` (Common-Build will publish single files as is)
 
 > Task: Add a copy of the qualifiers to show renaming function.
@@ -76,7 +74,7 @@ artifacts:
   remote: ara-artifactory.volvocars.biz
   repository: ARTCSP-CI
   items:
-    - path: common-build/playground/workshop_<CDSID>_1
+    - path: common-build-workshop/playground/workshop_<CDSID>_1
       qualifiers:
         - src: out/directory
         - src: out/singlefile.txt
@@ -95,13 +93,26 @@ Common-Build will then release the latest commit on *master*.
 
 > Task: Do a `git pull --tags` in your local environment. You should see that the tag `v0.0.0` is attached to the latest commit on master when doing a `git log`.
 
-A release in Common-Build always results in a corresponding tag `vM.m.p` in git.
+A release in Common-Build always results in a corresponding, automatically incremented, tag `vM.m.0` in git.
 
-> Task: Navigate to [ara-artifactory.volvocars.biz](https://ara-artifactory.volvocars.biz). Open up the folder `common-build-workshop/playground/workshop_<CDSID>_1` and you will see that the files in the artifact named by the git-sha (HEAD of master) have been copied to a new folder `0.1.0`. 
+> Task: Navigate to [ara-artifactory.volvocars.biz](https://ara-artifactory.volvocars.biz). Open up the folder `ARTCSP-CI/common-build-workshop/playground/workshop_<CDSID>_1` and you will see that the files in the artifact named by the git-sha (HEAD of master) have been copied to a new folder `0.1.0`. 
 
 **Note**: When we a do a release in Common-Build we don't rebuild artifacts - instead we copy them to a logical name defined by the version.
 
-## Lesson 4 - dependencies.yml and default.xml
+# Lesson 4 - Configure automatic releases.
+You may define automatic rules to be applied to Changes after a successful build.
+The possible values are:
+
+* Merge - the Change will be merged with its target branch.
+* Release - the Change will be merged with its target branch and then released.
+* Nothing - the Change will remain unmerged.
+
+> Task: Naviate to [common-build-staging.csp-dev.net](https://common-build-staging.csp-dev.net) and select your `playground/workshop_<CDSID>_1` in the drop down menu.
+Navigate to the *Configuration* section and change the *Default action* to *Release*.
+
+> Task: Make a dummy commit in `playground/workshop_<CDSID>_1`. Verify that the build starts and that a merge and release is performed after a successful build by executing `git pull --tags` in your terminal.
+
+## Lesson 5 - dependencies.yml and default.xml
 Dependencies to other components are defined in some kind of manifest files. Common-Build supports two types of manifests:
 
 * default.xml (standard Google repo tool format). 
@@ -135,7 +146,7 @@ artifacts:
   remote: ara-artifactory.volvocars.biz
   repository: ARTCSP-CI
   items:
-    - path: common-build/playground/workshop_<CDSID>_1
+    - path: common-build-workshop/playground/workshop_<CDSID>_1
       revision: 0.0.0
       toDir: from_project_1
       files:
@@ -143,7 +154,7 @@ artifacts:
           name: singlefile_newname.txt 
 ```
 > Task: Commit the files and push them to `HEAD:refs/for/master`. 
-Navigate to [victoria.volvocars.biz](https://victoria.volvocars.biz) and check the build log. You should see the file listing with the dependent files downloaded prior to build start. Also verify the folders that the downloads are located. Also note that `files.tar.gz` is expanded into the `files`.
+Navigate to [victoria.volvocars.biz](https://victoria.volvocars.biz) and check the build log. You should see the file listing with the dependent files downloaded prior to build start. Also verify the folders where the downloads are located. Also note that `files.tar.gz` is expanded into the `files`.
 
 The `files` folder can be renamed by defining the `name` attribute on the dependency.
 
@@ -164,24 +175,8 @@ Navigate to [victoria.volvocars.biz](https://victoria.volvocars.biz) and check t
 
 
 
-# Lesson 5 - Configure automatic releases.
-You may define automatic rules to be applied to Changes after a successful build.
-The possible values are:
-
-* Merge - the Change will be merged with its target branch.
-* Release - the Change will be merged with its target branch and then released.
-* Nothing - the Change will remain unmerged.
-
-> Task: Naviate to [common-build-staging.csp-dev.net](https://common-build-staging.csp-dev.net) and select your `playground/workshop_<CDSID>_1` in the drop down menu.
-Navigate to the *Configuration* section and change the *Default action* to *Release*.
-Do the same configuration for `playground/workshop_<CDSID>_2` project.
-
-> Task: Create a new commit in the `playground/workshop_<CDSID>_1` project and push it to `HEAD:refs/for/master`. Check the build in [victoria.volvocars.biz](https://victoria.volvocars.biz) that it completes successfully. After a successfull build make sure that the new release has been performed by executing `git pull --tags` in the terminal. A new version tag should have been created.
-
-After you have verified that a new version was automatically released for `playground/workshop_<CDSID>_1` you should enter Cynosure to verify that a new Change was created in `playground/workshop_<CDSID>_2`. This is due to the automatic dependency management of Common-Build. After a while you should see a new release in `playground/workshop_<CDSID>_2` by executing `git pull -tags` in the terminal.
-
 # Lesson 6 - Using secrets
-Secrets are stored in Vault and Common-Build supports fetching secrets and mount them in a standard way in when the docker container starts.
+Secrets are stored in Vault and Common-Build supports fetching secrets and mount them in a docker standard way when the docker container starts.
 
 > Task: Navigate to [winterfell.csp-dev.net](https://winterfell.csp-dev.net/ui/vault/secrets/csp/show/playground) and create the secret `csp/playground/workshop_<CDSID>_1`. Then update your `build.yml` to define the secrets:
 
@@ -198,9 +193,8 @@ build:
         myTopSecret: csp/playground/workshop_<CDSID>_1
       commands:
         - cmd: | 
-            echo Hello world!
             export secret=$(cat /run/secrets/myTopSecret)
-            echo Hello secret: $secret
+            echo Hello secret! $secret
 ```
 
 > Task: Push the updated `build.yml` to `HEAD:refs/for/master` and verify that the build log in Cynosure contains the *"Hello secret: **\<TheSecretValue\>**"* 
@@ -236,11 +230,9 @@ build:
       nodes:
         image1:
           image: ubuntu:20.04
-      secrets:
-        myTopSecret: csp/playground/workshop_<CDSID>_1      
       commands:
         - cmd: | 
-            echo Some fake build
+            echo Some fake build...
             mkdir build
             cp hello.py build #Just some fake build action.
             chmod +x build/hello.py
@@ -248,7 +240,7 @@ build:
       name: playground/workshop_<CDSID>_1
       file: docker/Dockerfile
 ```
-This will build create the docker image in the local daemon. In order to publish the docker image, as part of the build, we need to add `.common-build/publish.yml`.
+This will build and register the docker image in the local docker daemon. In order to publish the docker image, as part of the build, we need to add `.common-build/publish.yml`.
 
 > Task: Add the `.common-build/publish.yml` file:
 
@@ -259,15 +251,15 @@ images:
     - name: playground/workshop_<CDSID>_1
 ```
 
-> Task: Commit all files and push it to `HEAD:refs/for/master` checkout the build in Cynosure.
+> Task: Commit all files and push it to `HEAD:refs/for/master`. Verify the build in Cynosure.
 
 > Task: Test the image locally by running `docker run -it artcsp-docker.ara-artifactory.volvocars.biz/playground/workshop_<CDSID>_1:<GITSHA> /root/hello.py` 
 
-Note: If you're not logged in to `artcsp-docker.ara-artifactory.volvocars.biz` just execute `docker login -u <user> -p <password> artcsp-docker.ara-artifactory.volvocars.biz` and retry.
+Note: If you're not logged in to `artcsp-docker.ara-artifactory.volvocars.biz`, in the current terminal session, just execute `docker login -u <CSDID> -p <password> artcsp-docker.ara-artifactory.volvocars.biz` and retry.
 
 > Task: Navigate to the Common-Build UI and select the `playground/workshop_<CDSID>_1` project in the drop-down menu. Goto the *State* section and hit * Release*.
 
-> Task: Retry the image by version name: `docker run -it artcsp-docker.ara-artifactory.volvocars.biz/playground/workshop_<CDSID>_1:0.3.0 /root/hello.py`
+> Task: Retry running the image by version name: `docker run -it artcsp-docker.ara-artifactory.volvocars.biz/playground/workshop_<CDSID>_1:0.3.0 /root/hello.py`
 
 
 
