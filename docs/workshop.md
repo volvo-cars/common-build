@@ -99,7 +99,7 @@ A release in Common-Build always results in a corresponding, automatically incre
 
 **Note**: When we a do a release in Common-Build we don't rebuild artifacts - instead we copy them to a logical name defined by the version.
 
-# Lesson 4 - Configure automatic releases.
+## Lesson 4 - Configure automatic releases.
 You may define automatic rules to be applied to Changes after a successful build.
 The possible values are:
 
