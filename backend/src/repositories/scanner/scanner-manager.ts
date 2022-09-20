@@ -184,11 +184,8 @@ export class ScannerManagerImpl implements ScannerManager {
                             const existingUpdate = _.find(openUpdates, update => {
                                 return _.includes(update.labels, label) && update.target === writeBranch.branch.name
                             })
-                            const contents: Content[] = dependencyUpdates.map(update => {
-                                return {
-                                    path: update.path,
-                                    content: update.content
-                                }
+                            const contents: Content.Content[] = dependencyUpdates.map(update => {
+                                return new Content.Text(update.path, update.content)
                             })
                             if (existingUpdate) {
                                 logger.info(`Updating existing Update ${source}/${writeBranch.branch.name} (${existingUpdate.id}) (sha:${existingUpdate.sha}) [${label}] (${existingUpdate.labels.join(",")})`)

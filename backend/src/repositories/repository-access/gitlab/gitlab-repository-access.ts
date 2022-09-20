@@ -38,11 +38,11 @@ export class GitlabRepositoryAccess extends AbstractRepositoryAccess {
         return Promise.reject('Operation not implemented in GitLab access')
     }
 
-    createUpdate(repository: RepositoryPath, target: Refs.BranchRef, labels: string[], ...content: Content[]): Promise<UpdateId> {
+    createUpdate(repository: RepositoryPath, target: Refs.BranchRef, labels: string[], ...content: Content.Content[]): Promise<UpdateId> {
         return Promise.reject('Operation not implemented in GitLab access')
     }
 
-    async updateUpdate(repository: RepositoryPath, updateId: UpdateId, ...content: Content[]): Promise<void> {
+    async updateUpdate(repository: RepositoryPath, updateId: UpdateId, ...content: Content.Content[]): Promise<void> {
         return Promise.reject('Operation not implemented in GitLab access')
     }
 

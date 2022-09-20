@@ -27,8 +27,24 @@ To install the correct dependencies always run `npm install` from inside each re
 * Frontend: `localhost:4000`
 * Backend: `localhost:3000`
 
-# VM Configuration
-Plain Ubuntu 20.04 VM with Docker + Docker-compose installed. (Docker compose must use atleast 1.29.2)
+## VM Configuration
+Plain Ubuntu 20.04 VM with Docker installed. (Docker compose must use atleast 1.29.2)
 
 * [https://docs.docker.com/engine/install/ubuntu/](https://docs.docker.com/engine/install/ubuntu/)
-* [https://www.digitalocean.com/community/tutorials/how-to-install-and-use-docker-compose-on-ubuntu-20-04](https://www.digitalocean.com/community/tutorials/how-to-install-and-use-docker-compose-on-ubuntu-20-04) 
+
+# Integration endpoints
+
+### Upsert change
+Consumes a tar-file and creates or updates a Gerrit Change for the given repository.
+
+Parameters:
+
+* `storage` The logical name of the Source code repository (csp-gerrit)
+* `id` The repositories path at the Source code repository (ex `csp/nodes/sga`) 
+* `label` A Gerrit change hash-tag that will be used to update an existing Change of targeted for the same label and target branch.
+
+Returns:
+* `201 CREATED` upon successful exection
+
+How to use:
+> curl -X POST -v --header "Content-Type:application/octet-stream" --data-binary @somefile.tar.gz "https://common-build-staging.csp-dev.net/api/repository/update-content?storage=\<STORAGE\>&id=\<GERRIT-REPO-PATH\>&label=\<LABEL>\"

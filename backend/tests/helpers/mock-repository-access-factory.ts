@@ -45,10 +45,10 @@ export class MockRepositoryAccessFactory implements RepositoryAccessFactory, Rep
     getUpdates(repository: string): Promise<Update[]> {
         throw new Error("Method not implemented.")
     }
-    createUpdate(repository: string, target: Refs.Ref, labels: string[], ...content: Content[]): Promise<UpdateId> {
+    createUpdate(repository: string, target: Refs.Ref, labels: string[], ...content: Content.Content[]): Promise<UpdateId> {
         throw new Error("Method not implemented.")
     }
-    updateUpdate(repository: string, updateId: string, ...content: Content[]): Promise<void> {
+    updateUpdate(repository: string, updateId: string, ...content: Content.Content[]): Promise<void> {
         throw new Error("Method not implemented.")
     }
 

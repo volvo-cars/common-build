@@ -17,7 +17,9 @@
     "url": "https://github.com/volvo-cars/common-build.git",
     "directory": "backend"
   },
-  "keywords": ["common-build"],
+  "keywords": [
+    "common-build"
+  ],
   "author": "Niclas Lindberg <nlindbe2@volvocars.com>",
   "license": "Apache-2.0",
   "devDependencies": {
@@ -35,6 +37,7 @@
   "dependencies": {
     "@types/cheerio": "^0.22.31",
     "@types/fs-extra": "^9.0.13",
+    "@types/gunzip-maybe": "^1.4.0",
     "@types/http-status-codes": "^1.2.0",
     "@types/ioredis": "^4.28.10",
     "@types/koa": "^2.13.5",
@@ -43,12 +46,15 @@
     "@types/koa-logger": "^3.1.2",
     "@types/koa-router": "^7.4.4",
     "@types/lodash": "^4.14.180",
+    "@types/raw-body": "^2.3.0",
     "@types/ssh2": "^0.5.51",
+    "@types/tar-stream": "^2.2.2",
     "@types/yargs": "^17.0.9",
     "axios": "^0.26.1",
     "cheerio": "^1.0.0-rc.10",
     "class-transformer": "^0.5.1",
     "fs-extra": "^10.1.0",
+    "gunzip-maybe": "^1.4.2",
     "http-status-codes": "^2.2.0",
     "ioredis": "5.0.4",
     "koa": "^2.13.4",
@@ -60,10 +66,12 @@
     "lodash": "^4.17.21",
     "node-vault": "^0.9.22",
     "pino": "^7.11.0",
+    "raw-body": "^2.5.1",
     "reflect-metadata": "^0.1.13",
     "simple-git": "^3.7.1",
     "ssh2": "^1.7.0",
     "string-replace-async": "^2.0.0",
+    "tar-stream": "^2.2.0",
     "yaml": "^1.10.2",
     "yargs": "^17.3.1"
   }

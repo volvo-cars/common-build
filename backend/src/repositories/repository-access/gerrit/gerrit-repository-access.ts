@@ -141,10 +141,10 @@ export class GerritRepositoryAccess extends AbstractRepositoryAccess {
         })
     }
 
-    createUpdate(repository: RepositoryPath, target: Refs.BranchRef, labels: string[], ...content: Content[]): Promise<UpdateId> {
+    createUpdate(repository: RepositoryPath, target: Refs.BranchRef, labels: string[], ...content: Content.Content[]): Promise<UpdateId> {
         return this.createGerritRequest(`changes/`, HttpMethod.POST, {
             project: repository,
-            subject: `CommonBuild update: ${content.map(c => { return c.path }).join(",")}`,
+            subject: `CommonBuild update: ${_.take(content, 5).map(c => { return c.path }).join(",")}`,
             branch: target.name,
             status: "NEW",
             is_private: true
@@ -164,7 +164,7 @@ export class GerritRepositoryAccess extends AbstractRepositoryAccess {
         })
     }
 
-    async updateUpdate(repository: RepositoryPath, updateId: UpdateId, ...content: Content[]): Promise<void> {
+    async updateUpdate(repository: RepositoryPath, updateId: UpdateId, ...content: Content.Content[]): Promise<void> {
         return this.internalUpsertFileContent(updateId, content)
     }
 
@@ -182,11 +182,11 @@ export class GerritRepositoryAccess extends AbstractRepositoryAccess {
         })
     }
 
-    async internalUpsertFileContent(updateId: UpdateId, content: Content[]): Promise<void> {
+    async internalUpsertFileContent(updateId: UpdateId, content: Content.Content[]): Promise<void> {
         const cmd = async () => {
             return Promise.all(content.map(c => {
                 return this.createGerritRequest(`changes/${updateId}/edit/{${c.path}}`, HttpMethod.PUT, {
-                    binary_content: `data:text/plain;base64,${Buffer.from(c.content, "utf-8").toString("base64")}`
+                    binary_content: `data:text/plain;base64,${c.content().toString("base64")}`
                 }).then((response) => {
                     return Promise.resolve(true)
                 }).catch((error: AxiosError) => {

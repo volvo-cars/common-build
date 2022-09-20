@@ -86,9 +86,9 @@ export abstract class AbstractRepositoryAccess implements RepositoryAccess {
 
     abstract getUpdates(repository: RepositoryPath): Promise<Update[]>
 
-    abstract createUpdate(repository: RepositoryPath, target: Refs.BranchRef, labels: string[], ...content: Content[]): Promise<UpdateId>
+    abstract createUpdate(repository: RepositoryPath, target: Refs.BranchRef, labels: string[], ...content: Content.Content[]): Promise<UpdateId>
 
-    abstract updateUpdate(repository: RepositoryPath, updateId: UpdateId, ...content: Content[]): Promise<void>
+    abstract updateUpdate(repository: RepositoryPath, updateId: UpdateId, ...content: Content.Content[]): Promise<void>
 }
 
 

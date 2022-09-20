@@ -22,7 +22,7 @@ export const RepositoryViewContainer = () => {
 
     useEffect(() => {
         if (source) {
-            Http.createRequest("/api/repository/buildConfig", HttpMethod.POST).setData(new ApiRepository.BuildConfigRequest(source)).execute().then((rawResponse: AxiosResponse<any>) => {
+            Http.createRequest("/api/repository/build-config", HttpMethod.POST).setData(new ApiRepository.BuildConfigRequest(source)).execute().then((rawResponse: AxiosResponse<any>) => {
                 const response = Codec.toInstance(rawResponse.data, ApiRepository.BuildConfigResponse)
                 setBuildSystemInfo(response.buildSystemInfo)
             })
