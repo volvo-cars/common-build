@@ -1,4 +1,5 @@
 #! /bin/bash
+set -e
 echo "Usage enter.sh frontend|backend"
 
 containerId=$(docker ps -aqf "name=$1")

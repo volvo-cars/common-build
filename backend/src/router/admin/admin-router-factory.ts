@@ -11,17 +11,24 @@ import { RepositoryAccessFactory } from "../../repositories/repository-access/re
 import { RepositoryPath, RepositorySource, RepositoryStoreId } from "../../domain-model/repository-model/repository-source"
 import { Codec } from "../../domain-model/system-config/codec"
 import { ApiAdmin } from "../../domain-model/api/admin"
+import { MajorsService } from "../../repositories/majors/majors-service"
+import { ApiRepository } from "../../domain-model/api/repository"
+import { ActiveSystem } from "../../active-system/active-system"
 
 
 const logger = createLogger(loggerName(__filename))
 
 
 export class AdminRouterFactory implements RouterFactory {
-    constructor(private activeRepositories: ActiveRepositories, private repositoryAccessFactory: RepositoryAccessFactory, private repositoryModelFactory: RepositoryFactory) { }
+    constructor(private activeRepositories: ActiveRepositories, private repositoryAccessFactory: RepositoryAccessFactory, private repositoryModelFactory: RepositoryFactory, private majorsService: MajorsService, private activeSystem: ActiveSystem.System) { }
 
     buildRouter(): Promise<Router> {
         const router = new Router({ prefix: "/admin" })
         router.use(koaBodyParser())
+        router.get("/config-values", async (ctx) => {
+            const [majorSeries, availableSystems] = await Promise.all([this.majorsService.values(false), this.activeSystem.availableSystems()])
+            ctx.body = Codec.toPlain(new ApiRepository.ConfigValuesResponse(majorSeries, availableSystems))
+        })
         router.get("/repositories", async (ctx) => {
             const repositories = await this.activeRepositories.activeRepositories()
             ctx.body = Codec.toPlain(new ApiAdmin.ActiveRepositoriesResponse(repositories))

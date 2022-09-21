@@ -122,10 +122,25 @@ export namespace ApiRepository {
         }
     }
 
+    export class ConfigValuesResponse {
+        @Expose()
+        @Type(() => Majors.Serie)
+        public series: Majors.Serie[]
+
+        @Expose()
+        public availableSystems: string[]
+
+        constructor(series: Majors.Serie[], availableSystems: string[]) {
+            this.series = series
+            this.availableSystems = availableSystems
+        }
+    }
+
     export class MajorSeriesResponse {
         @Expose()
         @Type(() => Majors.Serie)
         public series: Majors.Serie[]
+
         constructor(series: Majors.Serie[]) {
             this.series = series
         }

@@ -3,7 +3,6 @@ import koaBodyParser from "koa-bodyparser"
 import Router from "koa-router"
 import { ApiRepository } from '../../domain-model/api/repository'
 import { Codec } from '../../domain-model/system-config/codec'
-import { Majors } from '../../domain-model/system-config/majors'
 import { createLogger, loggerName } from "../../logging/logging-factory"
 import { MajorApplicationService } from '../../repositories/majors/major-application-service'
 import { MajorsService } from "../../repositories/majors/majors-service"

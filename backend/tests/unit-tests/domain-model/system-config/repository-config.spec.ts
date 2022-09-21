@@ -9,6 +9,7 @@ describe("Test Ref", () => {
                 RepositoryConfig.Action.Merge,
                 [new RepositoryConfig.LabelAction("ssa", RepositoryConfig.Action.Release)]
             ),
+            undefined,
             new RepositoryConfig.MajorSerie("csp", true)
         )
         const json = JSON.stringify(instanceToPlain(config), null, 2)

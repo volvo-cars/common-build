@@ -2,10 +2,10 @@ import { Button, ButtonGroup, ButtonToolbar, Col, Form, Row } from "react-bootst
 import { RepositoryModel } from "../../domain-model/repository-model/repository-model"
 import { RepositorySource } from "../../domain-model/repository-model/repository-source"
 import { RepositorySourceUtil } from "../../utils/repository-source-util"
-import { FaExternalLinkAlt as ExternalIcon } from 'react-icons/fa';
+import { FaExternalLinkAlt as ExternalIcon } from 'react-icons/fa'
 import { Styles } from "../../Styles";
 import _ from 'lodash'
-import { CtrlTooltip } from "../../forms/CtrlTooltip";
+import { CtrlTooltip } from "../../forms/ctrl-tooltip"
 type Props = & {
     source: RepositorySource
     major: RepositoryModel.TopContainer
@@ -89,7 +89,7 @@ const ReleaseButton = ({ major, branchSha, onClick }: ReleaseButtonProps) => {
 
     const attributes = buttonInfo.disabled ? { "disabled": true } : {}
     return (
-        <CtrlTooltip message={buttonInfo.tooltip}>
+        <CtrlTooltip message={buttonInfo.tooltip} hideIcon={true}>
             <Button {...attributes} variant="primary" onClick={onClick}>Release</Button>
         </CtrlTooltip>
     )
@@ -110,7 +110,7 @@ const CreatePatchButton = ({ major, onClick }: CreatePatchButtonProps) => {
 
     const attributes = buttonInfo.disabled ? { "disabled": true } : {}
     return (
-        <CtrlTooltip message={buttonInfo.tooltip}>
+        <CtrlTooltip message={buttonInfo.tooltip} hideIcon={true}>
             <Button {...attributes} variant="primary" onClick={onClick}>Patch branch</Button>
         </CtrlTooltip>
     )

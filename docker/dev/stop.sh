@@ -1,3 +1,3 @@
 #! /bin/bash
-export CURRENT_DIR=$(pwd)
-docker compose  -f $CURRENT_DIR/docker/dev/docker-compose.yml down
+set -e
+docker compose -f $PWD/docker/dev/docker-compose.yml down

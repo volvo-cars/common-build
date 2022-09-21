@@ -7,10 +7,12 @@ import { RepositorySource } from "../../domain-model/repository-model/repository
 import { Codec } from "../../domain-model/system-config/codec"
 import { Majors } from "../../domain-model/system-config/majors"
 import { RepositoryConfig } from "../../domain-model/system-config/repository-config"
+import { CtrlBoolean } from "../../forms/ctrl-boolean"
 import { useNotifications } from "../../notifications/notifications"
 import { Http, HttpMethod } from "../../utils/http"
 import { BuildAutomationEdit } from "./build-automation-edit"
 import { MajorSerieEdit } from "./major-serie-edit"
+import { NonDefaultSystem } from "./non-default-system"
 
 type BackendResponse = {
     message: string
@@ -23,8 +25,9 @@ type Props = {
 
 export const GlobalConfigView = ({ source }: Props) => {
 
-    const [config, setConfig] = useState<RepositoryConfig.Config | undefined>()
-    const [series, setSeries] = useState<Majors.Serie[] | undefined>()
+    const [config, setConfig] = useState<RepositoryConfig.Config | undefined>(undefined)
+    const [series, setSeries] = useState<Majors.Serie[] | undefined>(undefined)
+    const [availableSystems, setAvailableSystems] = useState<string[] | undefined>(undefined)
     const notification = useNotifications()
     useEffect(() => {
         const t = setTimeout(() => {
@@ -38,6 +41,7 @@ export const GlobalConfigView = ({ source }: Props) => {
             if (e.response?.status === 404) {
                 setConfig(new RepositoryConfig.Config(
                     new RepositoryConfig.BuildAutomation(RepositoryConfig.Action.Merge, []),
+                    undefined,
                     undefined
                 ))
                 notification.warning(`No repository config exists for ${source.path}. Default values provided. Save to configure.`)
@@ -47,13 +51,14 @@ export const GlobalConfigView = ({ source }: Props) => {
         })
     }, [source.id, source.path])
     useEffect(() => {
-        Http.createRequest("/api/admin/majors/values").execute().then((response: AxiosResponse<any>) => {
-            const series = Codec.toInstance(response.data, ApiRepository.MajorSeriesResponse).series
-            setSeries(series)
+        Http.createRequest("/api/admin/config-values").execute().then((response: AxiosResponse<any>) => {
+            const configValues = Codec.toInstance(response.data, ApiRepository.ConfigValuesResponse)
+            setSeries(configValues.series)
+            setAvailableSystems(configValues.availableSystems)
         })
 
     }, [])
-    const isLoading = _.includes([config, series], undefined)
+    const isLoading = _.includes([config, series, availableSystems], undefined)
     const onMajorSerieConfigChanged = (majorConfig: RepositoryConfig.MajorSerie | undefined) => {
         if (config) {
             const clonedConfig = _.cloneDeep(config)
@@ -68,6 +73,15 @@ export const GlobalConfigView = ({ source }: Props) => {
             setConfig(clonedConfig)
         }
     }
+
+    const onNonDefaultSystemChanged = (system: string | undefined) => {
+        if (config) {
+            const clonedConfig = _.cloneDeep(config)
+            clonedConfig.activeSystem = system
+            setConfig(clonedConfig)
+        }
+    }
+
     const onSaveConfig = () => {
         if (config) {
             Http.createRequest("/api/repository/config/set", HttpMethod.POST).setData(Codec.toPlain(new ApiRepository.SaveConfigRequest(source, config))).execute().then((response: AxiosResponse<any>) => {
@@ -83,7 +97,7 @@ export const GlobalConfigView = ({ source }: Props) => {
                     {isLoading &&
                         <div>Loading repository...</div>
                     }
-                    {(!isLoading && config) &&
+                    {(!isLoading && config && availableSystems) &&
                         <>
                             <Row>
                                 <Col>
@@ -106,6 +120,16 @@ export const GlobalConfigView = ({ source }: Props) => {
                                 </Col>
                             </Row>
                             <Row>
+                                <Col>
+                                    <h6>Other configurations</h6>
+                                </Col>
+                            </Row>
+                            <Row>
+                                <Col>
+                                    <NonDefaultSystem availableSystems={availableSystems} activeSystem={config.activeSystem} onChange={onNonDefaultSystemChanged} />
+                                </Col>
+                            </Row>
+                            <Row style={{ paddingTop: 20 }}>
                                 <Col>
                                     <Button variant="primary" className="float-end" onClick={onSaveConfig}>Update config</Button>
                                 </Col>

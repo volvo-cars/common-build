@@ -1,4 +1,5 @@
 import _ from 'lodash'
+import { ActiveSystem } from '../active-system/active-system'
 import { SystemConfig } from "../config/system-config"
 import { Refs } from "../domain-model/refs"
 import { RepositorySource } from '../domain-model/repository-model/repository-source'
@@ -74,6 +75,7 @@ export class BuildSystemImpl implements BuildSystem, QueueListener, JobExecutor.
         private publisherManager: PublisherManager,
         private scannerManager: ScannerManager,
         private localGitFactory: LocalGitFactory,
+        private activeSystem: ActiveSystem.System,
         config: SystemConfig.Engine
     ) {
         this.queue = buildQueue(redis, time, this, config)
@@ -243,39 +245,52 @@ export class BuildSystemImpl implements BuildSystem, QueueListener, JobExecutor.
 
     async onUpdate(update: Update): Promise<void> {
         const cmd = async () => {
-            await this.localGitFactory.execute(update.source, LocalGitCommands.fetchUpdate(update), LocalGitLoadMode.CACHED)
-            let buildYml = await this.systemFilesAccess.getBuildConfig(update.source, update.sha)
-            if (buildYml) {
-                this.activeRepositories.addActiveRepositories(update.source)
-                return this.queue.upsert(update).then(_ => { return })
-            } else {
-                logger.debug(`No ${BuildConfig.FILE_PATH} for ${update.source}:${update.sha}. No processing.`)
-                return Promise.resolve()
-            }
+            return this.activeSystem.isActive(update.source).then(async isActive => {
+                if (isActive) {
+                    await this.localGitFactory.execute(update.source, LocalGitCommands.fetchUpdate(update), LocalGitLoadMode.CACHED)
+                    let buildYml = await this.systemFilesAccess.getBuildConfig(update.source, update.sha)
+                    if (buildYml) {
+                        this.activeRepositories.addActiveRepositories(update.source)
+                        return this.queue.upsert(update).then(_ => { return })
+                    } else {
+                        logger.debug(`No ${BuildConfig.FILE_PATH} for ${update.source}:${update.sha}. No processing.`)
+                        return Promise.resolve()
+                    }
+                } else {
+                    logger.debug(`OnUpdate skipped. ${update.source} not active in ${this.activeSystem.systemId} `)
+                }
+            })
         }
         return this.executionSerializer.execute(this.createSourceExecutionKey(update.source), cmd)
     }
 
     async onPush(source: RepositorySource, ref: Refs.Ref, newSha: Refs.ShaRef): Promise<void> {
         const cmd = async () => {
-            const normalizedRef = NormalizedModelUtil.normalize(ref)
-            if (normalizedRef) {
-                await Promise.all([this.repositoryModelFactory.get(source).invalidate(), this.localGitFactory.invalidate(source)])
-                if (normalizedRef.type === NormalizedModel.Type.MAIN_BRANCH) {
-                    const hasBuildYml = (await this.systemFilesAccess.getBuildConfig(source, newSha)) ? true : false
-                    if (hasBuildYml) {
-                        this.activeRepositories.addActiveRepositories(source)
-                    } else {
-                        this.activeRepositories.removeActiveRepositories(source)
+            //We need to run this here because updates to refs/meta/config
+            await Promise.all([this.repositoryModelFactory.get(source).invalidate(), this.localGitFactory.invalidate(source)])
+            return this.activeSystem.isActive(source).then(async isActive => {
+                if (isActive) {
+                    const normalizedRef = NormalizedModelUtil.normalize(ref)
+                    if (normalizedRef) {
+                        if (normalizedRef.type === NormalizedModel.Type.MAIN_BRANCH) {
+                            const hasBuildYml = (await this.systemFilesAccess.getBuildConfig(source, newSha)) ? true : false
+                            if (hasBuildYml) {
+                                this.activeRepositories.addActiveRepositories(source)
+                            } else {
+                                this.activeRepositories.removeActiveRepositories(source)
+                            }
+                        } else if (normalizedRef.type === NormalizedModel.Type.RELEASE_TAG) {
+                            logger.info(`Reveived release: ${source}/${ref}. Triggering dependency scan for known dependent repos.`)
+                            const publications = await this.publisherManager.publications(source, newSha)
+                            // Launched in parallel
+                            this.scannerManager.processForDependencies(...[[new DependencyRef.GitRef(source)], publications].flat())
+                        }
                     }
-                } else if (normalizedRef.type === NormalizedModel.Type.RELEASE_TAG) {
-                    logger.info(`Reveived release: ${source}/${ref}. Triggering dependency scan for known dependent repos.`)
-                    const publications = await this.publisherManager.publications(source, newSha)
-                    // Launched in parallel
-                    this.scannerManager.processForDependencies(...[[new DependencyRef.GitRef(source)], publications].flat())
+                    return Promise.resolve()
+                } else {
+                    logger.debug(`OnPush skipped. ${source} not active in ${this.activeSystem.systemId} `)
                 }
-            }
-            return Promise.resolve()
+            })
         }
         return this.executionSerializer.execute(this.createSourceExecutionKey(source), cmd)
     }

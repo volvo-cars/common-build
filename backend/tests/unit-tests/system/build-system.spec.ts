@@ -12,6 +12,7 @@ import { JobRef, JobRefType } from "../../../src/system/job-executor/job-ref"
 import { ActiveRepositories } from '../../../src/system/queue/active-repositories'
 import { QueueStatus } from "../../../src/system/queue/queue"
 import { ensureDefined } from "../../../src/utils/ensures"
+import { MockActiveSystem } from '../../helpers/mock-active-system'
 import { MockLocalGitFactory } from "../../helpers/mock-local-git-factory"
 import { MockPublisherManager } from '../../helpers/mock-publisher-manager'
 import { MockRepositoryAccessFactory } from '../../helpers/mock-repository-access-factory'
@@ -37,7 +38,8 @@ describe("Testing queue functionality", () => {
         let scannerManager = new MockScannerManager()
         let publisherManager = new MockPublisherManager()
         let localGitFactory = new MockLocalGitFactory()
-        let system = new BuildSystemImpl(redisFactory, mockTime, jobExecutor, repositoryAccessFactory, repositoryFactory, activeRepositories, publisherManager, scannerManager, localGitFactory, { concurrency: 1 })
+        let activeSystem = new MockActiveSystem([])
+        let system = new BuildSystemImpl(redisFactory, mockTime, jobExecutor, repositoryAccessFactory, repositoryFactory, activeRepositories, publisherManager, scannerManager, localGitFactory, activeSystem, { concurrency: 1 })
         return [system, mockTime, jobExecutor]
     }
 

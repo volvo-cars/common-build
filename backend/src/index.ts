@@ -48,6 +48,7 @@ import { NodeId } from './system/node-id'
 import { TaskQueueFactoryImpl } from './task-queue/task-queue-factory-impl'
 import { ShutdownManagerImpl } from './shutdown-manager/shutdown-manager-impl'
 import { KoaServiceWrapper } from './shutdown-manager/koa-service-wrapper'
+import { ActiveSystemImpl } from './active-system/active-system-impl'
 const logger = createLogger("main")
 logger.info("Starting CommonBuild server...")
 
@@ -95,26 +96,34 @@ createConfig(args.config, [new VaultValueSubstitutor(vaultService), new FileValu
     shutdownManager.register(redisFactory)
 
     const activeRepositories = createActiveRepositories(redisFactory)
+
+    const SYSTEM_ID_VAR_NAME = "SYSTEM_ID"
+    const systemId = process.env[SYSTEM_ID_VAR_NAME]
+    if (!systemId) {
+        throw new Error(`Missing EnvVar: ${SYSTEM_ID_VAR_NAME}`)
+    }
+    logger.info(`Starting system with systemId:${systemId}`)
+
     //DEV
     let preloadRepositories: RepositorySource[] | undefined
-
-
     const cbDev = process.env["CB_DEV"]
     if (cbDev) {
         await redisFactory.get().then(client => { return client.flushall() })
         const devFileName = `dev-${cbDev}.yaml`
-        const devFile = fs.readFileSync(devFileName)
-        console.log(`Processing dev-file: ${devFileName}`)
-        const repositories = <string[]>yaml.parse(devFile.toString())["repositories"]
-        preloadRepositories = repositories.map(line => {
-            const [gerrit, path] = line.split(":")
-            return new RepositorySource(gerrit, path)
-        })
-        await activeRepositories.addActiveRepositories(...preloadRepositories)
+        if (fs.existsSync(devFileName)) {
+            const devFile = fs.readFileSync(devFileName)
+            console.log(`Processing dev-file: ${devFileName}`)
+            const repositories = <string[]>yaml.parse(devFile.toString())["repositories"]
+            preloadRepositories = repositories.map(line => {
+                const [gerrit, path] = line.split(":")
+                return new RepositorySource(gerrit, path)
+            })
+            await activeRepositories.addActiveRepositories(...preloadRepositories)
+        }
     }
     //END DEV
-    const localGitFactory = new LocalGitFactoryImpl(config.gitCache, config.services.sources, vaultService, redisFactory, nodeID)
 
+    const localGitFactory = new LocalGitFactoryImpl(config.gitCache, config.services.sources, vaultService, redisFactory, nodeID)
     const repositoryAccessFactory = new RepositoryAccessFactoryImpl(config.services.sources, localGitFactory, vaultService)
 
     const app = new Koa({ proxy: true })
@@ -136,6 +145,7 @@ createConfig(args.config, [new VaultValueSubstitutor(vaultService), new FileValu
     const cynosureJobExecutor = new CynosureJobExecutor(cynosureApiConnectorFactory, taskQueueFactory.createQueue("cynosure"))
     shutdownManager.register(cynosureJobExecutor)
     const systemFilesAccess = new SystemFilesAccessImpl(repositoryAccessFactory)
+    const activeSystem = new ActiveSystemImpl(systemId, systemFilesAccess)
     const artifactoryFactory = new ArtifactoryFactoryImpl(vaultService)
     const dockerRegistryFactory = new ArtifactoryDockerRegistryFactoryImpl(config.services.dockerRegistries, vaultService)
     const majorService = new MajorsServiceImpl(config.majors, redisFactory, repositoryAccessFactory)
@@ -146,13 +156,13 @@ createConfig(args.config, [new VaultValueSubstitutor(vaultService), new FileValu
     const scannerManager = new ScannerManagerImpl(repositoryAccessFactory, repositoryFactory, activeRepositories, scanner, dependencyStorage, dependencyLookupProviderFactory, redisFactory, artifactoryFactory)
 
     let publisherManager = new PublisherManagerImpl(systemFilesAccess, artifactoryFactory, dockerRegistryFactory)
-    const buildSystem = new BuildSystemImpl(redisFactory, new SystemTime(), cynosureJobExecutor, repositoryAccessFactory, repositoryFactory, activeRepositories, publisherManager, scannerManager, localGitFactory, config.engine || { concurrency: 1 })
+    const buildSystem = new BuildSystemImpl(redisFactory, new SystemTime(), cynosureJobExecutor, repositoryAccessFactory, repositoryFactory, activeRepositories, publisherManager, scannerManager, localGitFactory, activeSystem, config.engine || { concurrency: 1 })
 
     const routerFactories: RouterFactory[] = [
         new CynosureRouterFactory(buildSystem, redisFactory),
         new AdminMajorsRouterFactory(majorService, majorApplicationService, activeRepositories),
         new AdminRepositoryRouterFactory(systemFilesAccess, buildSystem, repositoryAccessFactory, repositoryFactory, cynosureApiConnectorFactory),
-        new AdminRouterFactory(activeRepositories, repositoryAccessFactory, repositoryFactory)
+        new AdminRouterFactory(activeRepositories, repositoryAccessFactory, repositoryFactory, majorService, activeSystem)
     ]
 
     await Promise.all(routerFactories.map(factory => {

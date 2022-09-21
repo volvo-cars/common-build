@@ -13,4 +13,4 @@ Returns:
 * `201 CREATED` upon successful exection
 
 How to use:
-> curl -X POST -v --header "Content-Type:application/octet-stream" --data-binary @somefile.tar.gz "https://common-build-staging.csp-dev.net/api/repository/update-content?storage=\<STORAGE\>&id=\<GERRIT-REPO-PATH\>&label=\<LABEL>\"
+> curl --header "Content-Type:application/octet-stream" --data-binary @somefile.tar.gz "https://common-build-staging.csp-dev.net/api/repository/update-content?storage=\<STORAGE\>&id=\<GERRIT-REPO-PATH\>&label=\<LABEL>\"
