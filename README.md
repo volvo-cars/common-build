@@ -1,5 +1,9 @@
 # One-build
 
+# Documentation
+
+[Integration](docs/integration.md)
+
 # Development setup
 
 1. ***Create development docker image*** Run script `/docker/dev/build.sh` to create the development docker image and push it to local registry.
@@ -32,19 +36,3 @@ Plain Ubuntu 20.04 VM with Docker installed. (Docker compose must use atleast 1.
 
 * [https://docs.docker.com/engine/install/ubuntu/](https://docs.docker.com/engine/install/ubuntu/)
 
-# Integration endpoints
-
-### Upsert change
-Consumes a tar-file and creates or updates a Gerrit Change for the given repository.
-
-Parameters:
-
-* `storage` The logical name of the Source code repository (csp-gerrit)
-* `id` The repositories path at the Source code repository (ex `csp/nodes/sga`) 
-* `label` A Gerrit change hash-tag that will be used to update an existing Change of targeted for the same label and target branch.
-
-Returns:
-* `201 CREATED` upon successful exection
-
-How to use:
-> curl -X POST -v --header "Content-Type:application/octet-stream" --data-binary @somefile.tar.gz "https://common-build-staging.csp-dev.net/api/repository/update-content?storage=\<STORAGE\>&id=\<GERRIT-REPO-PATH\>&label=\<LABEL>\"
