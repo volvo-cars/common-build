@@ -152,8 +152,8 @@ export class GerritRepositoryAccess extends AbstractRepositoryAccess {
             if (response.status === 201) {
                 let change = <ChangeInfo>gerritJsonResponseDecode(response.data)
                 return this.internalSetHashTags(change.change_id, labels).then(() => {
-                    return this.internalUpsertFileContent(change.change_id, content).then(() => {
-                        return this.createGerritRequest(`changes/${change.change_id}/private`, HttpMethod.DELETE).then(() => {
+                    return this.createGerritRequest(`changes/${change.change_id}/private`, HttpMethod.DELETE).then(() => {
+                        return this.internalUpsertFileContent(change.change_id, content).then(() => {
                             return change.change_id
                         })
                     })
