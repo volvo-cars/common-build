@@ -58,7 +58,7 @@ export abstract class AbstractRepositoryAccess implements RepositoryAccess {
 
     async getBranches(repository: RepositoryPath): Promise<Refs.Branch[]> {
         return this.getBranchesAndTags(repository).then(entities => {
-            return entities.filter(e => { return e instanceof Refs.Branch })
+            return <Refs.Branch[]>entities.filter(e => { return e instanceof Refs.Branch })
         })
     }
 

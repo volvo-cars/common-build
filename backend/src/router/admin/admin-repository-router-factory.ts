@@ -9,6 +9,8 @@ import { ApiRepository } from "../../domain-model/api/repository"
 import { Refs } from '../../domain-model/refs'
 import { RepositorySource } from '../../domain-model/repository-model/repository-source'
 import { Codec } from "../../domain-model/system-config/codec"
+import { LocalGitCommands } from '../../git/local-git-commands'
+import { LocalGitFactory, LocalGitLoadMode } from '../../git/local-git-factory'
 import { createLogger, loggerName } from "../../logging/logging-factory"
 import { Content } from '../../repositories/repository-access/repository-access'
 import { RepositoryAccessFactory } from '../../repositories/repository-access/repository-access-factory'
@@ -23,7 +25,7 @@ import { RouterFactory } from "../router-factory"
 const logger = createLogger(loggerName(__filename))
 
 export class AdminRepositoryRouterFactory implements RouterFactory {
-    constructor(private systemFilesAccess: SystemFilesAccess, private buildSystem: BuildSystem, private repositoryAccessFactory: RepositoryAccessFactory, private repositoryModelFactory: RepositoryFactory, private cynosureApiConnectorFactory: CynosureApiConnectorFactory) { }
+    constructor(private systemFilesAccess: SystemFilesAccess, private buildSystem: BuildSystem, private repositoryAccessFactory: RepositoryAccessFactory, private repositoryModelFactory: RepositoryFactory, private cynosureApiConnectorFactory: CynosureApiConnectorFactory, private localGitFactory: LocalGitFactory) { }
 
     buildRouter(): Promise<Router> {
         const router = new Router({ prefix: "/repository" })
@@ -56,13 +58,41 @@ export class AdminRepositoryRouterFactory implements RouterFactory {
             const request = Codec.toInstance(ctx.request.body, ApiRepository.ReleaseRequest)
             const modelReader = await this.repositoryModelFactory.get(request.source).modelReader()
             const branch = modelReader.findBranch(request.major, undefined) // To include minors after.
-            if (branch) {
-                const version = await this.buildSystem.release(request.source, branch, VersionType.MINOR)
-                const updatedModel = (await this.repositoryModelFactory.get(request.source).modelReader()).model
-                ctx.body = Codec.toPlain(new ApiRepository.ReleaseResponse(updatedModel, `Version ${version.asString()} was released from ${request.sha}.`))
-
+            try {
+                if (branch) {
+                    const version = await this.buildSystem.release(request.source, branch.withSha(request.sha), VersionType.MINOR)
+                    const updatedModel = (await this.repositoryModelFactory.get(request.source).modelReader()).model
+                    ctx.body = Codec.toPlain(new ApiRepository.ReleaseResponse(updatedModel, `Version ${version.asString()} was released from ${request.sha}.`))
+                } else {
+                    throw new Error(`Could not find expected branch to release next version of Major ${request.major}.`)
+                }
+            } catch (e) {
+                ctx.response.status = HttpStatusCodes.BAD_REQUEST
+                ctx.response.message = (<Error>e).message
             }
         })
+        router.post("/unreleased-commits", async (ctx) => {
+            const request = Codec.toInstance(ctx.request.body, ApiRepository.UnreleasedCommitsRequest)
+            const modelReader = await this.repositoryModelFactory.get(request.source).modelReader()
+            try {
+                const fromVersion = modelReader.highestVersion(request.major)
+                const toBranch = modelReader.findBranch(request.major, undefined)
+                if (!toBranch) {
+                    throw new Error(`Could not find branch for Major ${request.major}.`)
+                }
+                const MAX_COMMIT_COUNT = 100
+                return this.localGitFactory.execute(request.source, LocalGitCommands.getCommits(toBranch.sha, fromVersion ? new Refs.TagRef(`v${fromVersion?.asString()}`) : undefined, MAX_COMMIT_COUNT), LocalGitLoadMode.CACHED).then(commits => {
+                    const apiCommits = commits.map(c => {
+                        return new ApiRepository.Commit(c.sha, c.commiter, c.timestamp, c.message)
+                    })
+                    ctx.body = Codec.toPlain(new ApiRepository.UnreleasedCommitsResponse(apiCommits))
+                })
+            } catch (e) {
+                ctx.response.status = HttpStatusCodes.BAD_REQUEST
+                ctx.response.message = (<Error>e).message
+            }
+        })
+
         router.post("/patch", async (ctx) => {
             const request = Codec.toInstance(ctx.request.body, ApiRepository.CreatePatchBranchRequest)
             const modelReader = await this.repositoryModelFactory.get(request.source).modelReader()
@@ -84,7 +114,7 @@ export class AdminRepositoryRouterFactory implements RouterFactory {
                 }
             } catch (e) {
                 ctx.response.status = HttpStatusCodes.BAD_REQUEST
-                ctx.body = `${e}`
+                ctx.response.message = (<Error>e).message
             }
         })
         router.post("/config", async (ctx) => {

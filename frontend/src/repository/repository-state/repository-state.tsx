@@ -1,22 +1,24 @@
-import { AxiosResponse } from "axios"
+import { AxiosError, AxiosResponse } from "axios"
+import _ from "lodash"
 import { useEffect, useState } from "react"
+import { Col, Row } from "react-bootstrap"
+import { ApiRepository } from "../../domain-model/api/repository"
 import { RepositoryModel } from "../../domain-model/repository-model/repository-model"
 import { RepositorySource } from "../../domain-model/repository-model/repository-source"
 import { Codec } from "../../domain-model/system-config/codec"
 import { Majors } from "../../domain-model/system-config/majors"
 import { useNotifications } from "../../notifications/notifications"
 import { Http, HttpMethod } from "../../utils/http"
-import _ from "lodash"
-import { MajorContainerView } from "./major-container-view"
-import { Col, Row } from "react-bootstrap"
-import { ApiRepository } from "../../domain-model/api/repository"
+import { ReleaseWindow } from "./release-window"
+import { RepositoryModelView } from "./repository-model-view"
 type Props = {
     source: RepositorySource
 }
 
 export const RepositoryState = ({ source }: Props) => {
-    const [model, setModel] = useState<RepositoryModel.Root | undefined>()
-    const [series, setSeries] = useState<Majors.Serie[] | undefined>()
+    const [model, setModel] = useState<RepositoryModel.Root | undefined>(undefined)
+    const [series, setSeries] = useState<Majors.Serie[] | undefined>(undefined)
+    const [commits, setCommits] = useState<{ commits: ApiRepository.Commit[], major: RepositoryModel.TopContainer } | undefined>(undefined)
     const notification = useNotifications()
     useEffect(() => {
         const t = setTimeout(() => {
@@ -33,27 +35,31 @@ export const RepositoryState = ({ source }: Props) => {
         Http.createRequest("/api/admin/majors/values").execute().then((response: AxiosResponse<any>) => {
             const series = Codec.toInstances(response.data, Majors.Serie)
             setSeries(series)
-        }).catch(e => {
-            notification.error(`${e}`)
+        }).catch((e: AxiosError) => {
+            notification.error(`${e.response?.status}: ${e.response?.statusText}`)
         })
 
     }, [])
-    const onRelease = (major: RepositoryModel.TopContainer, sha?: string) => {
-        Http.createRequest("/api/repository/release", HttpMethod.POST).setData(Codec.toPlain(new ApiRepository.ReleaseRequest(source, major.major, sha))).execute().then((response: AxiosResponse<any>) => {
-            const parsedResponse = Codec.toInstance(response.data, ApiRepository.ReleaseResponse)
-            notification.info(parsedResponse.message)
-            setModel(parsedResponse.model)
-        }).catch(e => {
-            notification.error(`${e}`)
+    const onRelease = (major: RepositoryModel.TopContainer, viewSha: string) => {
+        Http.createRequest("/api/repository/unreleased-commits", HttpMethod.POST).setData(Codec.toPlain(new ApiRepository.UnreleasedCommitsRequest(source, major.major))).execute().then((response: AxiosResponse<any>) => {
+            const parsedResponse = Codec.toInstance(response.data, ApiRepository.UnreleasedCommitsResponse)
+            setCommits({
+                commits: parsedResponse.commits,
+                major: major
+            })
+
+        }).catch((e: AxiosError) => {
+            notification.error(`${e.response?.status}:${e.response?.statusText}`)
         })
     }
-    const onPatch = (major: RepositoryModel.MajorContainer, sha?: string) => {
-        Http.createRequest("/api/repository/patch", HttpMethod.POST).setData(Codec.toPlain(new ApiRepository.CreatePatchBranchRequest(source, major.major, sha))).execute().then((response: AxiosResponse<any>) => {
+
+    const onPatch = (major: RepositoryModel.TopContainer) => {
+        Http.createRequest("/api/repository/patch", HttpMethod.POST).setData(Codec.toPlain(new ApiRepository.CreatePatchBranchRequest(source, major.major))).execute().then((response: AxiosResponse<any>) => {
             const parsedResponse = Codec.toInstance(response.data, ApiRepository.CreatePatchBranchResponse)
             notification.info(parsedResponse.message)
             setModel(parsedResponse.model)
-        }).catch(e => {
-            notification.error(`${e}`)
+        }).catch((e: AxiosError) => {
+            notification.error(`${e.response?.status}:${e.response?.statusText}`)
         })
     }
 
@@ -63,13 +69,23 @@ export const RepositoryState = ({ source }: Props) => {
     if (!isLoading && model) {
         return (
             <>
-                <MajorContainerView key={model.main.major} source={source} major={model.main} onRelease={() => { onRelease(model.main, model.main.main.sha) }} />
-                {model.majors.map(major => {
-                    return <MajorContainerView key={major.major} source={source} major={major} onRelease={() => { onRelease(major, major.branch) }} onPatch={() => { onPatch(major, major.branch) }} />
-                })}
-                {false &&
-                    <div><pre>{Codec.toJson(model || {})}</pre></div>
+                {commits &&
+                    <ReleaseWindow commits={commits.commits} major={commits.major} onRelease={(commit => {
+                        if (!commit) {
+                            setCommits(undefined)
+                        } else {
+                            Http.createRequest("/api/repository/release", HttpMethod.POST).setData(Codec.toPlain(new ApiRepository.ReleaseRequest(source, commits.major.major, commit.sha))).execute().then((response: AxiosResponse<any>) => {
+                                const parsedResponse = Codec.toInstance(response.data, ApiRepository.ReleaseResponse)
+                                notification.info(parsedResponse.message)
+                                setModel(parsedResponse.model)
+                                setCommits(undefined)
+                            }).catch((e: AxiosError) => {
+                                notification.error(`${e.response?.status}: ${e.response?.statusText}`)
+                            })
+                        }
+                    })} />
                 }
+                <RepositoryModelView model={model} onPatch={onPatch} onRelease={onRelease} source={source} />
             </>
         )
     } else {

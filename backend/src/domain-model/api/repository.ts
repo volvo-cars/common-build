@@ -1,4 +1,5 @@
 import { Expose, Type } from "class-transformer"
+import { Refs } from "../refs"
 import { RepositoryModel } from "../repository-model/repository-model"
 import { RepositorySource } from "../repository-model/repository-source"
 import { Majors } from "../system-config/majors"
@@ -34,14 +35,58 @@ export namespace ApiRepository {
         public major: number
 
         @Expose()
-        public sha?: string
+        public sha: string
 
-        constructor(source: RepositorySource, major: number, sha?: string) {
+        constructor(source: RepositorySource, major: number, sha: string) {
             this.source = source
             this.major = major
             this.sha = sha
         }
 
+    }
+
+    export class UnreleasedCommitsRequest {
+        @Expose()
+        @Type(() => RepositorySource)
+        public source: RepositorySource
+        @Expose()
+        public major: number
+
+        constructor(source: RepositorySource, major: number) {
+            this.source = source
+            this.major = major
+        }
+    }
+
+    export class Commit {
+        @Expose()
+        sha: string
+
+        @Expose()
+        committer: string
+
+        @Expose()
+        timestamp: number
+
+        @Expose()
+        message: string
+
+        constructor(sha: string, committer: string, timestamp: number, message: string) {
+            this.sha = sha
+            this.committer = committer
+            this.timestamp = timestamp
+            this.message = message
+        }
+    }
+
+    export class UnreleasedCommitsResponse {
+        @Expose()
+        @Type(() => Commit)
+        public commits: Commit[]
+
+        constructor(commits: Commit[]) {
+            this.commits = commits
+        }
     }
 
     export class ReleaseResponse extends MessageResponse {
@@ -65,10 +110,9 @@ export namespace ApiRepository {
         @Expose()
         public sha?: string
 
-        constructor(source: RepositorySource, major: number, sha?: string) {
+        constructor(source: RepositorySource, major: number) {
             this.source = source
             this.major = major
-            this.sha = sha
         }
 
     }

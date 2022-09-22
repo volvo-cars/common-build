@@ -33,7 +33,7 @@ export const RepositoryViewContainer = () => {
         return (
             <>
                 <Row>
-                    <Col xs={12}>
+                    <Col>
                         <h4>{source.path}@{source.id}</h4>
                         {buildSystemInfo &&
                             <div style={{ marginBottom: 20 }}>
@@ -43,11 +43,13 @@ export const RepositoryViewContainer = () => {
                             </div>
                         }
                     </Col>
-                    <Col xs={12}>
+                </Row>
+                <Row>
+                    <Col>
                         <div style={{ paddingTop: 10, marginTop: 10, borderTop: "1px solid #0f7cea" }} />
                     </Col>
                 </Row>
-                <Row className="gx-5 mb-2">
+                <Row>
                     <Col>
                         <NavLink
                             to="config"

@@ -76,6 +76,9 @@ export namespace Refs {
             }
             throw new Error(`Bad branch sha-ref: ${sha}`)
         }
+        withSha(sha: string): Branch {
+            return new Branch(this.ref, ShaRef.create(sha))
+        }
         static createWithSha(ref: string, sha: ShaRef): Branch {
             const branchRef = create(ref)
             if (branchRef.type === Type.BRANCH) {

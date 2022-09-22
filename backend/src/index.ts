@@ -161,7 +161,7 @@ createConfig(args.config, [new VaultValueSubstitutor(vaultService), new FileValu
     const routerFactories: RouterFactory[] = [
         new CynosureRouterFactory(buildSystem, redisFactory),
         new AdminMajorsRouterFactory(majorService, majorApplicationService, activeRepositories),
-        new AdminRepositoryRouterFactory(systemFilesAccess, buildSystem, repositoryAccessFactory, repositoryFactory, cynosureApiConnectorFactory),
+        new AdminRepositoryRouterFactory(systemFilesAccess, buildSystem, repositoryAccessFactory, repositoryFactory, cynosureApiConnectorFactory, localGitFactory),
         new AdminRouterFactory(activeRepositories, repositoryAccessFactory, repositoryFactory, majorService, activeSystem)
     ]
 
