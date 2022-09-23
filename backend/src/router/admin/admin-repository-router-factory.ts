@@ -97,20 +97,23 @@ export class AdminRepositoryRouterFactory implements RouterFactory {
             const request = Codec.toInstance(ctx.request.body, ApiRepository.CreatePatchBranchRequest)
             const modelReader = await this.repositoryModelFactory.get(request.source).modelReader()
             try {
-                const major = modelReader.model.majors.find(m => { return m.major === request.major })
-                if (major) {
-                    if (!major.branch) {
-                        if (major.start) {
-                            const source = request.source
-                            const createdBranch = await this.repositoryAccessFactory.createAccess(source.id).createBranch(source.path, Refs.ShaRef.create(major.start), `patch-${request.major}`)
+                const nextMajor = modelReader.findNextMajor(request.major)
+                if (nextMajor) {
+                    if (nextMajor.start) {
+                        const source = request.source
+                        const patchBranchName = `patch-${request.major}`
+                        try {
+                            const createdBranch = await this.repositoryAccessFactory.createAccess(source.id).createBranch(source.path, Refs.ShaRef.create(nextMajor.start), patchBranchName)
                             const updatedModel = (await this.repositoryModelFactory.get(request.source).modelReader()).model
                             ctx.body = Codec.toPlain(new ApiRepository.CreatePatchBranchResponse(updatedModel, `Branch ${createdBranch.ref.name} was created from sha ${createdBranch.sha.sha}.`))
-                        } else {
-                            throw new Error(`Major ${request.major} doesn't have a start location (major-${request.major} git tag)`)
+                        } catch (e) {
+                            throw new Error(`Could not create branch ${patchBranchName}. Probably already exists. Root cause: ${e}`)
                         }
                     } else {
-                        throw new Error(`Major ${request.major} already has a patch branch.`)
+                        throw new Error(`The next major (${nextMajor.major}) from major ${request.major} doesn't have a start location (major-${nextMajor.major} git tag)`)
                     }
+                } else {
+                    throw new Error(`Could not find a next major to major ${request.major}`)
                 }
             } catch (e) {
                 ctx.response.status = HttpStatusCodes.BAD_REQUEST

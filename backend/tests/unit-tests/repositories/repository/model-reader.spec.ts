@@ -1,7 +1,7 @@
 import { describe, expect, it } from '@jest/globals'
 import { RepositoryModel } from '../../../../src/domain-model/repository-model/repository-model'
 import { Version } from '../../../../src/domain-model/version'
-import { getReadShas, getVersionSha, getWriteBranch } from '../../../../src/repositories/repository/repository-model-reader'
+import { getReadShas, getVersionSha, getWriteBranch, RepositoryModelReaderImpl } from '../../../../src/repositories/repository/repository-model-reader'
 
 import { TestUtils } from '../../../helpers/test-utils'
 
@@ -51,6 +51,41 @@ describe("Model reader", () => {
         expect(majorReads[0]?.sha?.sha).toBe(TestUtils.sha("0").sha)
         expect(majorReads[1]?.major).toBe(0)
         expect(majorReads[1]?.sha?.sha).toBe(TestUtils.sha("1").sha)
+    })
+
+    it("Find next major", async () => {
+        const model = new RepositoryModel.Root(
+            new RepositoryModel.MainContainer(
+                2,
+                new RepositoryModel.MainBranch("master", TestUtils.sha("0").sha),
+                [],
+                TestUtils.sha("1").sha
+            ),
+            [
+                new RepositoryModel.MajorContainer(
+                    1,
+                    [],
+                    undefined,
+                    undefined
+                ),
+                new RepositoryModel.MajorContainer(
+                    0,
+                    [],
+                    undefined,
+                    undefined
+                )
+            ],
+
+        )
+        const reader = new RepositoryModelReaderImpl(model)
+        const afterMain = reader.findNextMajor(2)
+        expect(afterMain).toBeUndefined()
+        const after1 = reader.findNextMajor(1)
+        expect(after1?.major).toBe(2)
+        const after0 = reader.findNextMajor(0)
+        expect(after0?.major).toBe(1)
+
+
     })
 
     it("Test write branches main + 2 majors with/without branch", async () => {

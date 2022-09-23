@@ -100,7 +100,6 @@ export namespace LocalGitCommands {
 
             return git.env("GIT_PAGER", "cat").raw("log", this.range, `--pretty=%H${CommitFieldSeparator}%cn${CommitFieldSeparator}%ct${CommitFieldSeparator}%s`, "--max-count", this.maxCount.toString()).then(output => {
                 return <GitCommit[]>output.split("\n").map(s => {
-                    console.log("GIT", s)
                     return GitCommit.parse(s)
                 }).filter(c => { return c ? true : false })
             })
