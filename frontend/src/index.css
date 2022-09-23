@@ -40,3 +40,61 @@ code {
 .btn-group>*:not(:last-child) {
   margin-right: 10px;
 }
+
+.major-title-container {
+  align-items: center;
+}
+
+.major-title-container>*:not(:last-child) {
+  margin-right: 10px;
+}
+
+.major-title {
+  font-size: 30px;
+  display: inline-block;
+}
+
+.major-latest-version {
+  font-size: 14px;
+  display: inline-block;
+}
+
+.repository-git-link {
+  font-size: 15px;
+  display: inline-block;
+}
+
+.repository-rows-container {
+  margin: 20px 0
+}
+
+.repository-rows-container>*:not(:last-child) {
+  margin-bottom: 8px;
+}
+
+.repository-rows-container>*:nth-child(2n) {
+  background-color: #eee;
+}
+
+.repository-rows-container>*:nth-child(2n+1) {
+  background-color: #f5f5f5;
+}
+
+.git-container {
+  font-size: 13px;
+}
+
+.git-sha {
+  font-weight: bold;
+}
+
+.git-info-section {}
+
+.git-info-section>*:not(:last-child) {
+  margin-right: 10px
+}
+
+.git-info {
+  display: inline-block;
+  font-size: 13px;
+}

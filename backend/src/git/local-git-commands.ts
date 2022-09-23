@@ -74,6 +74,7 @@ export namespace LocalGitCommands {
 
     class FetchRemotes implements GitFunction<any> {
         public readonly description = this.constructor.name
+
         execute(git: SimpleGit, context: GitOpContext): Promise<any> {
             return git.raw("gc", "--auto").then(() => {
                 return git.fetch({ '--force': null })
@@ -86,8 +87,43 @@ export namespace LocalGitCommands {
         return FetchRemotes.CMD
     }
 
+    const CommitFieldSeparator = "[_-\|/-_]"
+
+    class GetCommits implements GitFunction<GitCommit[]> {
+        private range: string
+        public readonly description: string
+        constructor(private to: Refs.Ref, private from: Refs.Ref | undefined, private maxCount: number) {
+            this.range = _.concat([[this.to.originRef()], this.from ? [this.from.originRef()] : []]).flat().join("...")
+            this.description = `${this.constructor.name}: ${this.range}`
+        }
+        execute(git: SimpleGit, context: GitOpContext): Promise<GitCommit[]> {
+
+            return git.env("GIT_PAGER", "cat").raw("log", this.range, `--pretty=%H${CommitFieldSeparator}%cn${CommitFieldSeparator}%ct${CommitFieldSeparator}%s`, "--max-count", this.maxCount.toString()).then(output => {
+                return <GitCommit[]>output.split("\n").map(s => {
+                    return GitCommit.parse(s)
+                }).filter(c => { return c ? true : false })
+            })
+        }
+    }
+
+
+    export class GitCommit {
+        constructor(public readonly sha: string, public readonly commiter: string, public readonly timestamp: number, public readonly message: string) { }
+        static parse(string: string): GitCommit | undefined {
+            const parts = string.split(CommitFieldSeparator)
+            if (parts.length === 4) {
+                return new GitCommit(parts[0], parts[1], parseInt(parts[2]), parts[3])
+            }
+        }
+    }
+
+    export const getCommits = (to: Refs.Ref, from: Refs.Ref | undefined, maxCount: number): GitFunction<GitCommit[]> => {
+        return new GetCommits(to, from, maxCount)
+    }
+
     class FetchUpdate implements GitFunction<string | null> {
         public readonly description
+
         constructor(private update: Update) {
             this.description = `${this.constructor.name}: ${update.changeNumber}/${update.id}`
         }
@@ -107,6 +143,7 @@ export namespace LocalGitCommands {
 
     class UpdateBranch implements GitFunction<any> {
         public readonly description
+
         constructor(private ref: Refs.BranchRef, private contents: Content[], private fromSha?: Refs.ShaRef) {
             this.description = `${this.constructor.name}: ${ref}${fromSha ? ` from ${fromSha}` : ""} Content count:${contents.length}`
         }

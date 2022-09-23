@@ -9,6 +9,8 @@ import { MajorRead, VersionType, WriteBranch } from './repository'
 export interface RepositoryModelReader {
     readonly model: RepositoryModel.Root
     nextVersion(branch: Refs.BranchRef, versionType: VersionType): Version
+    findMajor(major: number): RepositoryModel.TopContainer | undefined
+    findNextMajor(major: number): RepositoryModel.TopContainer | undefined
     resolveReadShas(majorCount: number): MajorRead[]
     resolveWriteBranch(major: number): WriteBranch | undefined
     highestVersion(maxMajor: number | undefined): Version | undefined
@@ -20,6 +22,26 @@ export interface RepositoryModelReader {
 
 export class RepositoryModelReaderImpl implements RepositoryModelReader {
     constructor(public readonly model: RepositoryModel.Root) { }
+
+
+    findMajor(major: number): RepositoryModel.TopContainer | undefined {
+        if (major === this.model.main.major) {
+            return this.model.main
+        } else {
+            return this.model.majors.find(m => { return m.major === major })
+        }
+    }
+    findNextMajor(major: number): RepositoryModel.TopContainer | undefined {
+        const allMajors = _.concat(this.model.main, <RepositoryModel.TopContainer[]>this.model.majors)
+        const majorIndex = allMajors.findIndex(m => { return m.major === major })
+        console.log(major)
+        console.log(majorIndex)
+        console.dir(allMajors, { depth: null })
+        if (majorIndex >= 1) {
+            return allMajors[majorIndex - 1]
+        }
+    }
+
 
     findBranch(major: number, minor: number | undefined): Refs.Branch | undefined {
         const findMinorBranch = (minorContainers: RepositoryModel.MinorContainer[]) => {
