@@ -24,7 +24,7 @@ export class AdminMajorsRouterFactory implements RouterFactory {
             ctx.body = Codec.toPlain(new ApiRepository.MajorSeriesResponse(majorSeries))
         })
         router.post("/values/add", async (ctx) => {
-            const request = Codec.toInstance(ctx.request.body, ApiRepository.MajorSerieAddValueRequest)
+            const request = Codec.toInstance(ctx.request.rawBody, ApiRepository.MajorSerieAddValueRequest)
             await this.majorsService.addValue(request.value).then((value) => {
                 this.activeRepositories.activeRepositories().then(repositories => {
                     return this.majorApplicationService.applyMajors(request.value, repositories).then(result => {

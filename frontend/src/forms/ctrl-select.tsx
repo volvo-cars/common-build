@@ -4,7 +4,7 @@ import Select from 'react-select'
 
 interface Props<T> {
     selected?: T
-    options: T[]
+    options: NonNullable<T>[]
     transformLabel?: (t: T) => string
     onChange: (selected: T) => void
     isLoading?: boolean

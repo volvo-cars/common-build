@@ -18,6 +18,6 @@ RUN apt install -y \
 FROM base as frontend
 RUN npm install -g serve
 COPY frontend/node_modules /common-build/node_modules
-COPY frontend/build /common-build/app
+COPY frontend/dist /common-build/app
 #RUN echo "#! /bin/bash \n node /common-build/app/index.js \"\$@\"" > /usr/bin/common-build && chmod +x /usr/bin/common-build
 

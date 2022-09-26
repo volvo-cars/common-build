@@ -32,12 +32,12 @@ export class AdminRepositoryRouterFactory implements RouterFactory {
         router.use(koaBodyParser())
 
         router.post("/model", async (ctx) => {
-            const request = Codec.toInstance(ctx.request.body, ApiRepository.SourceRequest)
+            const request = Codec.toInstance(ctx.request.rawBody, ApiRepository.SourceRequest)
             const model = (await this.repositoryModelFactory.get(request.source).modelReader()).model
             ctx.body = Codec.toPlain(new ApiRepository.ModelResponse(model))
         })
         router.post("/build-config", async (ctx) => {
-            const request = Codec.toInstance(ctx.request.body, ApiRepository.BuildConfigRequest)
+            const request = Codec.toInstance(ctx.request.rawBody, ApiRepository.BuildConfigRequest)
             const source = request.source
             const connector = this.cynosureApiConnectorFactory.createApiConnector(source.id)
             if (connector) {
@@ -55,7 +55,7 @@ export class AdminRepositoryRouterFactory implements RouterFactory {
             }
         })
         router.post("/release", async (ctx) => {
-            const request = Codec.toInstance(ctx.request.body, ApiRepository.ReleaseRequest)
+            const request = Codec.toInstance(ctx.request.rawBody, ApiRepository.ReleaseRequest)
             const modelReader = await this.repositoryModelFactory.get(request.source).modelReader()
             const branch = modelReader.findBranch(request.major, undefined) // To include minors after.
             try {
@@ -72,7 +72,7 @@ export class AdminRepositoryRouterFactory implements RouterFactory {
             }
         })
         router.post("/unreleased-commits", async (ctx) => {
-            const request = Codec.toInstance(ctx.request.body, ApiRepository.UnreleasedCommitsRequest)
+            const request = Codec.toInstance(ctx.request.rawBody, ApiRepository.UnreleasedCommitsRequest)
             const modelReader = await this.repositoryModelFactory.get(request.source).modelReader()
             try {
                 const fromVersion = modelReader.highestVersion(request.major)
@@ -94,7 +94,7 @@ export class AdminRepositoryRouterFactory implements RouterFactory {
         })
 
         router.post("/patch", async (ctx) => {
-            const request = Codec.toInstance(ctx.request.body, ApiRepository.CreatePatchBranchRequest)
+            const request = Codec.toInstance(ctx.request.rawBody, ApiRepository.CreatePatchBranchRequest)
             const modelReader = await this.repositoryModelFactory.get(request.source).modelReader()
             try {
                 const nextMajor = modelReader.findNextMajor(request.major)
@@ -121,7 +121,7 @@ export class AdminRepositoryRouterFactory implements RouterFactory {
             }
         })
         router.post("/config", async (ctx) => {
-            const request = Codec.toInstance(ctx.request.body, ApiRepository.SourceRequest)
+            const request = Codec.toInstance(ctx.request.rawBody, ApiRepository.SourceRequest)
             //const reader = await this.repositoryModelFactory.get(source).modelReader()
             const config = await this.systemFilesAccess.getRepositoryConfig(request.source)
             if (config) {
@@ -132,7 +132,7 @@ export class AdminRepositoryRouterFactory implements RouterFactory {
             }
         })
         router.post("/config/set", async (ctx) => {
-            const request = Codec.toInstance(ctx.request.body, ApiRepository.SaveConfigRequest)
+            const request = Codec.toInstance(ctx.request.rawBody, ApiRepository.SaveConfigRequest)
             await this.systemFilesAccess.saveRepositoryConfig(request.source, request.config)
             ctx.body = Codec.toPlain(new ApiRepository.MessageResponse(`Repository config was updated`))
         })

@@ -6,22 +6,29 @@
       "dom.iterable",
       "esnext"
     ],
-    "experimentalDecorators": true, /* Enable experimental support for TC39 stage 2 draft decorators. */
-    "emitDecoratorMetadata": true, /* Emit design-type metadata for decorated declarations in source files. */
     "allowJs": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "strict": true,
     "forceConsistentCasingInFileNames": true,
-    "noFallthroughCasesInSwitch": true,
     "module": "esnext",
     "moduleResolution": "node",
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "noEmit": true,
-    "jsx": "preserve"
+    "noEmit": false,
+    "experimentalDecorators": true, /* Enable experimental support for TC39 stage 2 draft decorators. */
+    "emitDecoratorMetadata": true, /*  design-type metadata for decorated declarations in source files. */
+    "noFallthroughCasesInSwitch": true,
+    "jsx": "react-jsx",
+    "sourceMap": true,
+    "noImplicitAny": true,
   },
+  "exclude": [
+    "node_modules",
+    "build",
+    "dist"
+  ],
   "include": [
     "src",
     "tests"
