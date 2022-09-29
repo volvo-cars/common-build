@@ -48,7 +48,7 @@
   "scripts": {
     "start": "webpack-dev-server --mode=development --open --hot",
     "build": "rimraf ./dist && webpack --mode=production",
-    "update-notice": "npx generate-license-file --input package.json --output NOTICE.md --overwrite"
+    "update-notice": "npx @houdiniproject/noticeme -u"
   },
   "browserslist": [
     ">0.2%",
