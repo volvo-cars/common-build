@@ -12,6 +12,7 @@ export interface CynosureApiConnector {
      */
     startActivity(productId: CynosureProtocol.ProductId, sha: Refs.ShaRef): Promise<boolean>
     abortActivity(activityId: CynosureProtocol.ActivityId, sha: Refs.ShaRef, reason: string): Promise<void>
+    setInfoUrl(productId: CynosureProtocol.ProductId, sha: Refs.ShaRef, url: string): Promise<void>
 }
 
 export namespace CynosureProtocol {

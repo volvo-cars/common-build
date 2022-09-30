@@ -6,7 +6,7 @@ export class MockActiveSystem implements ActiveSystem.System {
     public readonly systemId: string = "testing"
     constructor(private activeRepos: RepositorySource[]) { }
     isActive(source: RepositorySource): Promise<boolean> {
-        return Promise.resolve(this.activeRepos.length === 0 || this.activeRepos.find(r => { return r.isEqual(source) }) ? true : false)
+        return Promise.resolve(this.activeRepos.length === 0 || this.activeRepos.find(r => { return r.equals(source) }) ? true : false)
     }
     availableSystems(): Promise<string[]> {
         throw new Error("Method not implemented.");

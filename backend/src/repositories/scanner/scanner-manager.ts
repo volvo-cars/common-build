@@ -20,6 +20,7 @@ import { Scanner } from "./scanner"
 import { ArtifactoryFactory } from "../../artifact-storage/artifactory/artifactory-factory"
 import { PublicationRepositoryMetaDataKeys } from "../publisher/publisher-manager"
 import { DependencyLookupProvider, DependencyLookupProviderFactory } from "./dependency-lookup-provider"
+import { ActiveSystem } from "../../active-system/active-system"
 export interface ScannerManager {
     processForDependencies(...dependencies: DependencyRef.Ref[]): Promise<RepositorySource[]>
     allDependencies(source: RepositorySource, ref: Refs.ShaRef): Promise<DependencyGraph>
@@ -62,7 +63,8 @@ export class ScannerManagerImpl implements ScannerManager {
         private dependencyStorage: DependencyStorage,
         private dependencyLookupProviderFactory: DependencyLookupProviderFactory,
         private redisFactory: RedisFactory,
-        private artifactoryFactory: ArtifactoryFactory
+        private artifactoryFactory: ArtifactoryFactory,
+        private activeSystem: ActiveSystem.System
     ) { }
 
     async allDependencies(source: RepositorySource, ref: Refs.Ref): Promise<DependencyGraph> {
@@ -134,7 +136,6 @@ export class ScannerManagerImpl implements ScannerManager {
                 return resolveGraphs(ref, versions)
             }))).flat()
         })
-
     }
 
     async processForDependencies(...dependencies: DependencyRef.Ref[]): Promise<RepositorySource[]> {
@@ -161,58 +162,64 @@ export class ScannerManagerImpl implements ScannerManager {
 
     private async scanRepository(source: RepositorySource, dependencyLookupProvider: DependencyLookupProvider): Promise<void> {
         const cmd = async () => {
-            logger.info(`Scanning for dependencies: ${source}`)
-            const repositoryModelReader = await this.repositoryModelFactory.get(source).modelReader()
-            const majorReads = repositoryModelReader.resolveReadShas(1) //Two later on
-            const repositoryAccess = this.repositoryAccessFactory.createAccess(source.id)
-            const openUpdates = await repositoryAccess.getUpdates(source.path)
-            const allDependencies = DependencyRef.uniqueRefs(_.flatten(await Promise.all(majorReads.map(async majorRead => {
-                if (majorRead.sha) {
-                    const dependencyProvider = new DependencyProviderImpl(majorRead.major, dependencyLookupProvider)
-                    const scanResult = await this.scanner.scan(source, majorRead.major, majorRead.sha, dependencyProvider, LabelCriteria.includeAll())
-                    const updatesByLabel = _.groupBy(scanResult.updates, dependencyUpdate => {
-                        return dependencyUpdate.label
-                    })
-                    const labels = Object.keys(updatesByLabel)
-                    logger.info(`Scanning major:${majorRead.major} in ${source} ${majorRead.sha} Labels:${labels.join(",")}`)
+            return this.activeSystem.isActive(source).then(async isActive => {
+                if (isActive) {
+                    logger.info(`Scanning for dependencies: ${source}`)
+                    const repositoryModelReader = await this.repositoryModelFactory.get(source).modelReader()
+                    const majorReads = repositoryModelReader.resolveReadShas(1) //Two later on
+                    const repositoryAccess = this.repositoryAccessFactory.createAccess(source.id)
+                    const openUpdates = await repositoryAccess.getUpdates(source.path)
+                    const allDependencies = DependencyRef.uniqueRefs(_.flatten(await Promise.all(majorReads.map(async majorRead => {
+                        if (majorRead.sha) {
+                            const dependencyProvider = new DependencyProviderImpl(majorRead.major, dependencyLookupProvider)
+                            const scanResult = await this.scanner.scan(source, majorRead.major, majorRead.sha, dependencyProvider, LabelCriteria.includeAll())
+                            const updatesByLabel = _.groupBy(scanResult.updates, dependencyUpdate => {
+                                return dependencyUpdate.label
+                            })
+                            const labels = Object.keys(updatesByLabel)
+                            logger.info(`Scanning major:${majorRead.major} in ${source} ${majorRead.sha} Labels:${labels.join(",")}`)
 
-                    await Promise.all(Object.keys(updatesByLabel).map(async label => {
-                        const dependencyUpdates = updatesByLabel[label]
-                        const writeBranch = repositoryModelReader.resolveWriteBranch(majorRead.major)
-                        if (writeBranch) {
-                            // Find if existing update exists
-                            const existingUpdate = _.find(openUpdates, update => {
-                                return _.includes(update.labels, label) && update.target === writeBranch.branch.name
-                            })
-                            const contents: Content.Content[] = dependencyUpdates.map(update => {
-                                return new Content.Text(update.path, update.content)
-                            })
-                            if (existingUpdate) {
-                                logger.info(`Updating existing Update ${source}/${writeBranch.branch.name} (${existingUpdate.id}) (sha:${existingUpdate.sha}) [${label}] (${existingUpdate.labels.join(",")})`)
-                                await repositoryAccess.updateUpdate(source.path, existingUpdate.id, ...contents)
-                                return Promise.resolve()
-                            } else {
-                                if (!writeBranch.exists) {
-                                    await repositoryAccess.createBranch(source.path, writeBranch.sha, writeBranch.branch.name)
+                            await Promise.all(Object.keys(updatesByLabel).map(async label => {
+                                const dependencyUpdates = updatesByLabel[label]
+                                const writeBranch = repositoryModelReader.resolveWriteBranch(majorRead.major)
+                                if (writeBranch) {
+                                    // Find if existing update exists
+                                    const existingUpdate = _.find(openUpdates, update => {
+                                        return _.includes(update.labels, label) && update.target === writeBranch.branch.name
+                                    })
+                                    const contents: Content.Content[] = dependencyUpdates.map(update => {
+                                        return new Content.Text(update.path, update.content)
+                                    })
+                                    if (existingUpdate) {
+                                        logger.info(`Updating existing Update ${source}/${writeBranch.branch.name} (${existingUpdate.id}) (sha:${existingUpdate.sha}) [${label}] (${existingUpdate.labels.join(",")})`)
+                                        await repositoryAccess.updateUpdate(source.path, existingUpdate.id, ...contents)
+                                        return Promise.resolve()
+                                    } else {
+                                        if (!writeBranch.exists) {
+                                            await repositoryAccess.createBranch(source.path, writeBranch.sha, writeBranch.branch.name)
+                                        }
+
+                                        logger.debug(`Creating Update for ${source} major:${majorRead.major} label:${label} files: ${contents.map(c => { return c.path }).join(",")}`)
+                                        await repositoryAccess.createUpdate(source.path, writeBranch.branch, [label], ...contents)
+                                        return Promise.resolve()
+                                    }
+                                } else {
+                                    logger.warn(`Could not resolve write-branch for major ${majorRead.major} in ${source.id}/${source.path}`)
+                                    return undefined
                                 }
-
-                                logger.debug(`Creating Update for ${source} major:${majorRead.major} label:${label} files: ${contents.map(c => { return c.path }).join(",")}`)
-                                await repositoryAccess.createUpdate(source.path, writeBranch.branch, [label], ...contents)
-                                return Promise.resolve()
-                            }
+                            }))
+                            return scanResult.allDependencies
                         } else {
-                            logger.warn(`Could not resolve write-branch for major ${majorRead.major} in ${source.id}/${source.path}`)
-                            return undefined
+                            return Promise.resolve([])
                         }
-                    }))
-                    return scanResult.allDependencies
+                    }))))
+                    return this.dependencyStorage.setDependencies(source, ...allDependencies)
                 } else {
-                    return Promise.resolve([])
+                    return Promise.resolve()
                 }
-            }))))
+            })
 
-            await this.dependencyStorage.setDependencies(source, ...allDependencies)
-            return Promise.resolve()
+
         }
         return this.executionSerializer.execute(`scan-repository:${source.id}/${source.path}`, cmd)
 

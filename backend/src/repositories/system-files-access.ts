@@ -13,7 +13,7 @@ import { RepositoryAccessFactory } from './repository-access/repository-access-f
 export interface SystemFilesAccess {
     getRepositoryConfig(source: RepositorySource): Promise<RepositoryConfig.Config | undefined>
     saveRepositoryConfig(source: RepositorySource, config: RepositoryConfig.Config): Promise<void>
-    getBuildConfig(source: RepositorySource, ref: Refs.Ref): Promise<BuildConfig.Config | undefined>
+    getBuildConfig(source: RepositorySource, ref: Refs.Ref, parseException?: true): Promise<BuildConfig.Config | undefined>
     getPublicationConfig(source: RepositorySource, ref: Refs.Ref): Promise<PublicationConfig.Config | undefined>
     getDependenciesConfig(source: RepositorySource, ref: Refs.Ref): Promise<DependenciesConfig.Config | undefined>
     getFile(source: RepositorySource, path: string, ref: Refs.Ref): Promise<string | undefined>
@@ -59,7 +59,7 @@ export class SystemFilesAccessImpl implements SystemFilesAccess {
         }
     }
 
-    getBuildConfig(source: RepositorySource, ref: Refs.Ref): Promise<BuildConfig.Config | undefined> {
+    getBuildConfig(source: RepositorySource, ref: Refs.Ref, parseException?: true): Promise<BuildConfig.Config | undefined> {
         return this.repositoryAcccessFactory.createAccess(source.id).getFile(source.path, BuildConfig.FILE_PATH, ref).then(content => {
 
             if (content) {
@@ -68,6 +68,9 @@ export class SystemFilesAccessImpl implements SystemFilesAccess {
                     return Promise.resolve(gateYml)
                 } catch (e) {
                     logger.warn(`Parse error on ${BuildConfig.FILE_PATH} in ${source}/${ref.name}: ${e}`)
+                    if (parseException) {
+                        throw e
+                    }
                     return Promise.resolve(undefined)
                 }
             } else {

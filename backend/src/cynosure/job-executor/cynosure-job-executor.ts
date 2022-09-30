@@ -7,6 +7,7 @@ import { Duration, Time } from "../../task-queue/time";
 import { CynosureProtocol } from "../cynosure-api-connector/cynosure-api-connector";
 import { CynosureApiConnectorFactory } from "../cynosure-api-connector/cynosure-api-connector-factory";
 import { ProcessingStates } from "./processing-states";
+import { RedisFactory } from '../../redis/redis-factory';
 
 const logger = createLogger(loggerName(__filename))
 
@@ -53,6 +54,19 @@ export class CynosureJobExecutor implements JobExecutor.Executor, ShutdownManage
 
 
     constructor(private cynosureApiConnectorFactory: CynosureApiConnectorFactory, private taskQueue: TaskQueue.Service) { }
+
+    setInfoUrl(key: JobExecutor.Key, url: string): void {
+        const connector = this.cynosureApiConnectorFactory.createApiConnector(key.source.id)
+        if (connector) {
+            connector.findProductId(key.source.path).then(productId => {
+                if (productId) {
+                    return connector.setInfoUrl(productId, key.jobRef.sha, url)
+                } else {
+                    return Promise.resolve()
+                }
+            })
+        }
+    }
 
     private listener: JobExecutor.Listener | null = null
     private active: boolean = true
@@ -118,14 +132,14 @@ export class CynosureJobExecutor implements JobExecutor.Executor, ShutdownManage
                                 } else if (startedIndex >= 0) {
                                     const startedState = <ProcessingStates.JobStarted>rawStartedState
                                     logger.debug(`Cancelling Cynosure job: ${key}.`)
-                                    return connector.abortActivity(startedState.activityId, key.sha, "")
+                                    return connector.abortActivity(startedState.activityId, key.jobRef.sha, "")
                                 }
                             } else if (rawQueuedState) {
                                 // Starting queued job
                                 const queuedState = <ProcessingStates.JobQueued>rawQueuedState
                                 return connector.findProductId(key.source.path).then(productId => {
                                     if (productId) {
-                                        return connector.startActivity(productId, key.sha).then((started) => {
+                                        return connector.startActivity(productId, key.jobRef.sha).then((started) => {
                                             if (started) {
                                                 logger.info(`Starting Cynosure Activity ${key} -> Product: ${productId}`)
                                                 return this.taskQueue.upsert(entry.uid, Constants.STARTING.findActivity.wait, new ProcessingStates.JobStarting(productId, 0).serialize())
@@ -141,7 +155,7 @@ export class CynosureJobExecutor implements JobExecutor.Executor, ShutdownManage
                                 })
                             } else if (rawStartingState) {
                                 const startingState = <ProcessingStates.JobStarting>rawStartingState
-                                return connector.findActivity(startingState.productId, key.sha).then(activity => {
+                                return connector.findActivity(startingState.productId, key.jobRef.sha).then(activity => {
                                     if (activity) {
                                         logger.info(`Started Cynosure Activity ${key} -> Product: ${startingState.productId} Activity: ${activity.activityId}`)
                                         listener.onJobStarted(key)
@@ -154,7 +168,7 @@ export class CynosureJobExecutor implements JobExecutor.Executor, ShutdownManage
                                 })
                             } else if (rawStartedState) {
                                 const startedState = <ProcessingStates.JobStarted>rawStartedState
-                                connector.findActivity(startedState.productId, key.sha).then(activity => {
+                                connector.findActivity(startedState.productId, key.jobRef.sha).then(activity => {
                                     if (activity) {
                                         logger.debug(`Cynosure activity poll ${key} Cynosure: ${startedState.productId}/${activity.activityId}: State: ${activity.state} Verdict:${activity.verdict}`)
                                         if (activity.state === CynosureProtocol.ActivityState.FINISHED) {

@@ -1,5 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it } from '@jest/globals'
 import _ from 'lodash'
+import { JobRef } from '../../../src/domain-model/job-ref/job-ref'
 import { Refs } from '../../../src/domain-model/refs'
 import { RepositorySource } from '../../../src/domain-model/repository-model/repository-source'
 import { BuildConfig } from '../../../src/domain-model/system-config/build-config'
@@ -8,11 +9,11 @@ import { createForTest } from "../../../src/redis/redis-factory"
 import { RepositoryFactoryImpl } from '../../../src/repositories/repository/repository-factory'
 import { BuildSystem, BuildSystemImpl, Update } from "../../../src/system/build-system"
 import { JobExecutor } from '../../../src/system/job-executor/job-executor'
-import { JobRef, JobRefType } from "../../../src/system/job-executor/job-ref"
 import { ActiveRepositories } from '../../../src/system/queue/active-repositories'
 import { QueueStatus } from "../../../src/system/queue/queue"
 import { ensureDefined } from "../../../src/utils/ensures"
 import { MockActiveSystem } from '../../helpers/mock-active-system'
+import { MockBuildLogService } from '../../helpers/mock-buildlog-service'
 import { MockLocalGitFactory } from "../../helpers/mock-local-git-factory"
 import { MockPublisherManager } from '../../helpers/mock-publisher-manager'
 import { MockRepositoryAccessFactory } from '../../helpers/mock-repository-access-factory'
@@ -39,7 +40,8 @@ describe("Testing queue functionality", () => {
         let publisherManager = new MockPublisherManager()
         let localGitFactory = new MockLocalGitFactory()
         let activeSystem = new MockActiveSystem([])
-        let system = new BuildSystemImpl(redisFactory, mockTime, jobExecutor, repositoryAccessFactory, repositoryFactory, activeRepositories, publisherManager, scannerManager, localGitFactory, activeSystem, { concurrency: 1 })
+        let buildLogService = new MockBuildLogService()
+        let system = new BuildSystemImpl(redisFactory, mockTime, jobExecutor, repositoryAccessFactory, repositoryFactory, activeRepositories, publisherManager, scannerManager, localGitFactory, activeSystem, buildLogService, { concurrency: 1 })
         return [system, mockTime, jobExecutor]
     }
 
@@ -65,8 +67,8 @@ describe("Testing queue functionality", () => {
             target: "master",
             title: "Some updated"
         }
-        let ref = JobRef.create(JobRefType.UPDATE, updateId)
-        const job = new JobExecutor.Key(source, ref, sha)
+        let ref = new JobRef.UpdateRef(updateId, sha)
+        const job = new JobExecutor.Key(source, ref)
         let [buildSystem, time, jobExecutor] = createSystem()
         await buildSystem.onUpdate(update)
         expect(await buildSystem.getStatus(job)).toBe(QueueStatus.STARTING)
@@ -106,10 +108,11 @@ describe("Testing queue functionality", () => {
             title: "Some updated"
         }
 
-        let ref = JobRef.create(JobRefType.UPDATE, updateId)
+        let ref1 = new JobRef.UpdateRef(updateId, sha1)
+        let ref2 = new JobRef.UpdateRef(updateId, sha2)
 
-        const job1 = new JobExecutor.Key(source, ref, sha1)
-        const job2 = new JobExecutor.Key(source, ref, sha2)
+        const job1 = new JobExecutor.Key(source, ref1)
+        const job2 = new JobExecutor.Key(source, ref2)
 
         let [buildSystem, time, jobExecutor] = createSystem()
         await buildSystem.onUpdate(update1)
@@ -155,6 +158,7 @@ class MockActiveRepositories implements ActiveRepositories {
 
 
 class MockJobExecutor implements JobExecutor.Executor {
+
     log: JobExecutor.Key[] = []
     private listener: JobExecutor.Listener | null = null
 
@@ -168,6 +172,8 @@ class MockJobExecutor implements JobExecutor.Executor {
         this.log.push(job)
         return Promise.resolve()
     }
+    setInfoUrl(key: JobExecutor.Key, url: string): void { }
+
 
     private findIndex(key: JobExecutor.Key): number {
         return _.findIndex(this.log, (entry: JobExecutor.Key) => {

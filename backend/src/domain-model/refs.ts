@@ -12,10 +12,12 @@ export namespace Refs {
             return `${this.type}:${this.name}`
         }
         abstract originRef(): string
+        abstract equals(other: Ref): boolean
 
     }
 
     export class BranchRef extends Ref {
+
         constructor(name: string) {
             super(Type.BRANCH, name)
         }
@@ -29,6 +31,12 @@ export namespace Refs {
         }
         override originRef(): string {
             return `origin/${this.name}`
+        }
+        equals(other: Ref): boolean {
+            if (other instanceof BranchRef) {
+                return other.name === this.name
+            }
+            return false
         }
     }
     export class TagRef extends Ref {
@@ -46,6 +54,13 @@ export namespace Refs {
         override originRef(): string {
             return this.name
         }
+        equals(other: Ref): boolean {
+            if (other instanceof TagRef) {
+                return other.name === this.name
+            }
+            return false
+        }
+
 
     }
     export class ShaRef extends Ref {
@@ -64,6 +79,13 @@ export namespace Refs {
         override originRef(): string {
             return this.name
         }
+        equals(other: Ref): boolean {
+            if (other instanceof ShaRef) {
+                return other.name === this.name
+            }
+            return false
+        }
+
 
     }
 
@@ -123,12 +145,14 @@ export namespace Refs {
                 }
             }
             throw new Error(`Unsupported ref [tags/heads/remotes]: ${ref}`)
-        } else if (parts.length === 1 && ref.length === 40) {
-            try {
-                return ShaRef.create(parts[0])
-            } catch (e) { }
+        } else if (parts.length === 1) {
+            if (ref.length === 40) {
+                try {
+                    return ShaRef.create(parts[0])
+                } catch (e) { }
+            }
         }
-        throw new Error(`Bad ref:${ref}.`)
+        return new BranchRef(parts.join("/"))
     }
 
     export const tryCreate = (ref: string): Ref | undefined => {

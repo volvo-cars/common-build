@@ -6,16 +6,31 @@ import { RepositoryPath } from "../../domain-model/repository-model/repository-s
 import { ServiceConfig } from "../../domain-model/system-config/service-config";
 import { createLogger, loggerName } from "../../logging/logging-factory";
 import { RedisFactory } from "../../redis/redis-factory";
+import { Duration } from "../../task-queue/time";
 import { Http, HttpMethod } from "../../utils/http";
-import { retryWithTimeout } from "../../utils/retry-with-timeout";
 
 import { CynosureApiConnector, CynosureProtocol } from "./cynosure-api-connector";
 const logger = createLogger(loggerName(__filename))
+const productIdCacheTTL = Duration.fromSeconds(60 * 60)
 
 export class GerritCynosureApiConnector implements CynosureApiConnector {
     private static cacheTTL = Math.floor(1 * 24 * 60 * 60 / 1000)
     constructor(private redisFactory: RedisFactory, private source: ServiceConfig.GerritSourceService) { }
 
+    setInfoUrl(productId: CynosureProtocol.ProductId, sha: Refs.ShaRef, url: string): Promise<void> {
+        return Http.createRequest("https://core.messagebus.cynosure.volvocars.biz/api/3.0.0/ProductUpdated", HttpMethod.POST).setData({
+            "productId": {
+                "namespace": productId,
+                "instance": sha.sha
+            },
+            "url": url
+        }).setHeaders({
+            "Content-Type": "application/json"
+        }
+        ).execute().then((response: AxiosResponse<any>) => {
+            return Promise.resolve()
+        })
+    }
 
     findProductId(path: RepositoryPath): Promise<string | undefined> {
         return this.redisFactory.get().then(async client => {
@@ -75,18 +90,17 @@ export class GerritCynosureApiConnector implements CynosureApiConnector {
     }
 
     findActivity(productId: CynosureProtocol.ProductId, sha: Refs.ShaRef): Promise<CynosureProtocol.Activity | undefined> {
-
-        return Http.createRequest("https://core.statedb.cynosure.volvocars.biz/api/3.0.0/activity/query", HttpMethod.POST).setData({
-            "query": {
-                "productId.namespace": productId,
-                "productId.instance": sha.sha
-            }
-        }).setHeaders({
-            "Content-Type": "application/json"
-        }
-        ).execute().then((response: AxiosResponse<CynosureProtocol.FindActivityResponse>) => {
-            return Promise.resolve(_.first(response.data))
-        })
+        return Http.createRequest("https://core.statedb.cynosure.volvocars.biz/api/3.0.0/activity/query", HttpMethod.POST)
+            .setData({
+                "query": {
+                    "productId.namespace": productId,
+                    "productId.instance": sha.sha
+                }
+            }).setHeaders({
+                "Content-Type": "application/json"
+            }).execute().then((response: AxiosResponse<CynosureProtocol.FindActivityResponse>) => {
+                return _.first(response.data)
+            })
     }
 
     startActivity(productId: CynosureProtocol.ProductId, sha: Refs.ShaRef): Promise<boolean> {

@@ -23,7 +23,7 @@ describe("Task queue", () => {
     it("Push and retrive 1 expired entry", async () => {
         const queue = new TaskQueueImpl("test", redisFactory)
         await queue.upsert("A", Duration.NO_DURATION, "My Data")
-        const wait = await TestWait.waitPromise(500)
+        await TestWait.waitPromise(500)
         const expired = await queue.popExpired(2, Time.now())
         expect(expired.entries.length).toBe(1)
         const entry = expired.entries[0]

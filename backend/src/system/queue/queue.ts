@@ -1,19 +1,17 @@
-import _ from 'lodash'
 import { ChainableCommander } from "ioredis/built/utils/RedisCommander";
-import { createLogger, loggerName } from "../../logging/logging-factory"
-import { RedisFactory } from "../../redis/redis-factory"
-import { BranchName, Update } from "../build-system"
-import { Time } from "../time"
-import { BuildState } from './build-state'
-import { ActiveBuildState } from "./active-build-state"
-import { JobRef, JobRefType } from '../job-executor/job-ref'
-import { createExecutionSerializer, ExecutionSerializer } from '../execution-serializer'
+import _ from 'lodash';
 import { SystemConfig } from '../../config/system-config';
-import { deserializeQueueValue, serializeQueueValue } from './queue-value-util';
-import { RedisUtils } from '../../redis/redis-utils';
-import { Refs } from '../../domain-model/refs';
+import { JobRef } from '../../domain-model/job-ref/job-ref';
 import { RepositorySource } from '../../domain-model/repository-model/repository-source';
-import Redis from 'ioredis';
+import { createLogger, loggerName } from "../../logging/logging-factory";
+import { RedisFactory } from "../../redis/redis-factory";
+import { RedisUtils } from '../../redis/redis-utils';
+import { BranchName, Update } from "../build-system";
+import { createExecutionSerializer, ExecutionSerializer } from '../execution-serializer';
+import { JobExecutor } from "../job-executor/job-executor";
+import { Time } from "../time";
+import { ActiveBuildState } from "./active-build-state";
+import { BuildState } from './build-state';
 
 const logger = createLogger(loggerName(__filename))
 
@@ -50,13 +48,13 @@ export const queueStatusTerminal = (status: QueueStatus): boolean => {
 }
 
 export interface QueueListener {
-    onQueueUpdated(source: RepositorySource, ref: JobRef, sha: Refs.ShaRef, buildState: BuildState): void
+    onQueueUpdated(source: RepositorySource, ref: JobRef.Ref, buildState: BuildState): void
 }
 
 export interface Queue {
     upsert(update: Update): Promise<void>
-    addStatus(source: RepositorySource, ref: JobRef, sha: Refs.ShaRef, status: QueueStatus): Promise<void>
-    getStatus(source: RepositorySource, ref: JobRef, sha: Refs.ShaRef): Promise<BuildState | null>
+    addStatus(source: RepositorySource, ref: JobRef.Ref, status: QueueStatus): Promise<void>
+    getStatus(source: RepositorySource, ref: JobRef.Ref): Promise<BuildState | undefined>
 }
 
 type ProcessingQueueName = string
@@ -83,47 +81,49 @@ export class QueueImpl {
         return `processing-queue:{${source.id}:${source.path}}:${target}`
     }
 
-    private getCurrentKey(source: RepositorySource, ref: JobRef): string {
-        return `current:{${source.id}:${source.path}}:${ref.serialize()}`
+    private getCurrentKey(source: RepositorySource, refKey: JobRef.Key): string {
+        return `current:{${source.id}:${source.path}}:${refKey.id}`
     }
 
-    private getJobRefSemaphore(source: RepositorySource, ref: JobRef): string {
-        return `serial:{${source.id}:${source.path}}:${ref.serialize()}`
+    private getJobRefSemaphore(source: RepositorySource, refKey: JobRef.Key): string {
+        return `serial:{${source.id}:${source.path}}:${refKey.id}`
     }
 
-    private calculateProcessRefTimeKey(source: RepositorySource, ref: JobRef): string {
-        return `time:{${source.id}:${source.path}}:${ref.serialize()}`
+    private calculateProcessRefTimeKey(source: RepositorySource, refKey: JobRef.Key): string {
+        return `time:{${source.id}:${source.path}}:${refKey.id}`
     }
 
     async upsert(update: Update): Promise<void> {
-        const ref = JobRef.create(JobRefType.UPDATE, update.id)
-        return this.upsertRef(update.source, ref, update.sha, update.target)
+        const ref = new JobRef.UpdateRef(update.id, update.sha)
+        return this.upsertRef(update.source, ref, update.target)
     }
 
-    private upsertRef(source: RepositorySource, ref: JobRef, sha: Refs.ShaRef, targetBranchName: BranchName): Promise<void> {
+    private upsertRef(source: RepositorySource, ref: JobRef.UpdateRef, targetBranchName: BranchName): Promise<void> {
         return this.redis.get().then(async client => {
             const processingQueueName = this.calculateProcessingQueue(source, targetBranchName)
-            const currentKey = this.getCurrentKey(source, ref)
+            const currentKey = this.getCurrentKey(source, ref.key())
             const current = await client.get(currentKey)
-            const existingState = current ? ActiveBuildState.deserialize(current) : null
-            if (!existingState || existingState.sha.sha !== sha.sha) {
+            const existingState = current ? ActiveBuildState.deserialize(current) : undefined
+            if (!existingState || !existingState.sha.equals(ref.sha)) {
                 const buildState = BuildState.create(QueueStatus.QUEUED, this.time.get())
-                logger.info(`Adding for processing ${source}/${sha} ${ref.serialize()} to ${processingQueueName}`)
+                logger.info(`Adding for processing ${source}/${ref} to ${processingQueueName}`)
+                const jobKey = new JobExecutor.Key(source, ref)
                 await RedisUtils.executeMulti(client.multi()
-                    .set(this.calculateProcessRefTimeKey(source, ref), this.time.get(), "EX", QueueImpl.refTimeTTL) // Store time for update. Used to add new priority among queues.
+                    .set(this.calculateProcessRefTimeKey(source, ref.key()), this.time.get(), "EX", QueueImpl.refTimeTTL) // Store time for update. Used to add new priority among queues.
                     .zadd(QueueImpl.scheduledQueues, "NX", this.time.get(), processingQueueName) // Only add if not existing yet / preserve first entry's prio by time.
-                    .zadd(processingQueueName, this.time.get(), serializeQueueValue(source, ref))
-                    .set(currentKey, ActiveBuildState.create(sha, buildState, targetBranchName).serialize())
+                    .zadd(processingQueueName, this.time.get(), jobKey.serialize())
+                    .set(currentKey, ActiveBuildState.create(ref.sha, buildState, targetBranchName).serialize())
                 )
                 if (existingState) {
                     const status = existingState.buildState.current().status
-                    this.queueListener.onQueueUpdated(source, ref, existingState.sha, existingState.buildState.push(status === QueueStatus.QUEUED ? QueueStatus.CANCELLED : QueueStatus.ABORTED, this.time.get()))
+                    const existingRef = ref.withSha(existingState.sha)
+                    this.queueListener.onQueueUpdated(source, existingRef, existingState.buildState.push(status === QueueStatus.QUEUED ? QueueStatus.CANCELLED : QueueStatus.ABORTED, this.time.get()))
                     if (status !== QueueStatus.QUEUED) {
                         await client.zrem(QueueImpl.inactiveQueues, processingQueueName)
                     }
                 }
 
-                this.queueListener.onQueueUpdated(source, ref, sha, buildState)
+                this.queueListener.onQueueUpdated(source, ref, buildState)
                 return this.start(1)
             } else {
                 return Promise.resolve()
@@ -156,20 +156,20 @@ export class QueueImpl {
                 const started = await Promise.all(topProcessingQueues.map(async (processingQueueName, index) => {
                     let value = _.nth(maybeNextProcessingValues, index)
                     if (value) {
-                        const [source, ref] = deserializeQueueValue(value)
-                        const currentKey = this.getCurrentKey(source, ref)
+                        const jobKey = JobExecutor.Key.deserialize(value)
+                        const currentKey = this.getCurrentKey(jobKey.source, jobKey.jobRef.key())
                         const currentValue = await client.get(currentKey)
                         if (currentValue) {
                             const currentState = ActiveBuildState.deserialize(currentValue)
                             if (currentState.buildState.current().status === QueueStatus.QUEUED) {
-                                logger.debug(`Starting queue: ${processingQueueName} ${ref} ${currentState.sha}`)
+                                logger.debug(`Starting queue: ${processingQueueName} ${jobKey}`)
                                 const newBuildState = currentState.buildState.push(QueueStatus.STARTING, this.time.get())
                                 const newActiveState = ActiveBuildState.create(currentState.sha, newBuildState, currentState.targetBranch)
                                 await client.multi()
                                     .set(currentKey, newActiveState.serialize())
                                     .zadd(QueueImpl.inactiveQueues, 0, processingQueueName)
                                     .exec()
-                                this.queueListener.onQueueUpdated(source, ref, currentState.sha, newBuildState)
+                                this.queueListener.onQueueUpdated(jobKey.source, jobKey.jobRef, newBuildState)
                                 return Promise.resolve(1)
                             } else {
                                 return Promise.resolve(0)
@@ -190,52 +190,52 @@ export class QueueImpl {
         })
     }
 
-    async getStatus(source: RepositorySource, ref: JobRef, sha: Refs.ShaRef): Promise<BuildState | null> {
+    async getStatus(source: RepositorySource, ref: JobRef.Ref): Promise<BuildState | undefined> {
         const cmd = () => {
             return this.redis.get().then(async client => {
-                const currentKey = this.getCurrentKey(source, ref)
+                const currentKey = this.getCurrentKey(source, ref.key())
                 return client.get(currentKey).then(raw => {
                     if (raw) {
                         const state = ActiveBuildState.deserialize(raw)
-                        return state.sha.sha === sha.sha ? state.buildState : null
+                        return state.sha.equals(ref.sha) ? state.buildState : undefined
                     }
-                    return null
+                    return undefined
                 })
             })
         }
-        return this.serializer.execute(this.getJobRefSemaphore(source, ref), cmd)
+        return this.serializer.execute(this.getJobRefSemaphore(source, ref.key()), cmd)
     }
 
 
-    async addStatus(source: RepositorySource, ref: JobRef, sha: Refs.ShaRef, status: QueueStatus): Promise<void> {
+    async addStatus(source: RepositorySource, ref: JobRef.Ref, status: QueueStatus): Promise<void> {
         let cmd = () => {
             return this.redis.get().then(async client => {
-                const currentKey = this.getCurrentKey(source, ref)
+                const currentKey = this.getCurrentKey(source, ref.key())
                 return client.get(currentKey).then(async raw => {
                     if (raw) {
                         const activeState = ActiveBuildState.deserialize(raw)
-                        if (activeState.sha.sha === sha.sha) {
+                        if (activeState.sha.equals(ref.sha)) {
                             const newBuildState = activeState.buildState.push(status, this.time.get())
                             const processingQueueName = this.calculateProcessingQueue(source, activeState.targetBranch)
                             if (queueStatusTerminal(status)) {
-                                logger.debug(`Terminal ${source.id}/${source.path} ${ref.serialize()} ${sha} ${status}`)
+                                logger.debug(`Terminal ${source} ${ref.serialize()} ${status}`)
                                 const nextRefValue = <string | undefined>_.first(<string[]>_.nth(await RedisUtils.executeMulti(client.multi()
                                     .zrange(processingQueueName, 0, Number.MAX_VALUE, "BYSCORE", "LIMIT", 0, 1)
                                     .del(currentKey)
                                     .zrem(QueueImpl.inactiveQueues, processingQueueName)
                                 ), 0))
                                 if (nextRefValue) {
-                                    const [source, ref] = deserializeQueueValue(nextRefValue)
-                                    const queueProcessingPrio = (await client.get(this.calculateProcessRefTimeKey(source, ref))) || this.time.get()
+                                    const jobKey = JobExecutor.Key.deserialize(nextRefValue)
+                                    const queueProcessingPrio = (await client.get(this.calculateProcessRefTimeKey(source, jobKey.jobRef.key()))) || this.time.get()
                                     await client.zadd(QueueImpl.scheduledQueues, queueProcessingPrio, processingQueueName)
                                 } else {
                                     await client.zrem(QueueImpl.scheduledQueues, processingQueueName)
                                 }
-                                this.queueListener.onQueueUpdated(source, ref, sha, newBuildState)
+                                this.queueListener.onQueueUpdated(source, ref, newBuildState)
                                 return this.start(1)
                             } else {
-                                await client.set(currentKey, ActiveBuildState.create(sha, newBuildState, activeState.targetBranch).serialize())
-                                this.queueListener.onQueueUpdated(source, ref, sha, newBuildState)
+                                await client.set(currentKey, ActiveBuildState.create(ref.sha, newBuildState, activeState.targetBranch).serialize())
+                                this.queueListener.onQueueUpdated(source, ref, newBuildState)
                                 return Promise.resolve()
                             }
                         } else {
@@ -247,7 +247,7 @@ export class QueueImpl {
                 })
             })
         }
-        return this.serializer.execute(this.getJobRefSemaphore(source, ref), cmd)
+        return this.serializer.execute(this.getJobRefSemaphore(source, ref.key()), cmd)
     }
 }
 

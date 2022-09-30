@@ -133,7 +133,8 @@ export class GerritRepositoryAccess extends AbstractRepositoryAccess {
                     change.branch,
                     change.subject,
                     change.hashtags || [],
-                    change._number
+                    change._number,
+                    `https://${_.trimEnd(this.config.https, "/")}/c/${repository}/+/${change._number}`
                 ))
             } else {
                 return Promise.reject(new Error(`Could not fetch updates from ${this.config.id}/${repository}: ${response.status}`))

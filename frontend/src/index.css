@@ -98,3 +98,7 @@ code {
   display: inline-block;
   font-size: 13px;
 }
+
+.duration {
+  font-family: 'Courier New', Courier, monospace;
+}

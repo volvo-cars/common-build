@@ -3,29 +3,39 @@ import { RedisUtils } from "../redis/redis-utils"
 import { TaskQueue } from "./task-queue"
 import { Duration, Time } from "./time"
 import _ from 'lodash'
-export class TaskQueueImpl implements TaskQueue.Service {
 
-    private static ENTRY_KEY = "task:entries"
-    private static DATA_KEY_PREFIX = "task:data"
-    private static DATA_HANDLED_PREFIX = "task:handled"
-    private static DATA_TTL_SEC = 60 * 60
-    private static HANDLED_TTL_SEC = 120
+const Const = {
+    ENTRY_KEY: "task:entries",
+    DATA_KEY_PREFIX: "task:data",
+    DATA_HANDLED_PREFIX: "task:handled",
+    DATA_TTL: Duration.fromMinutes(60),
+    HANDLED_TTL: Duration.fromSeconds(120)
+}
+
+export class TaskQueueImpl implements TaskQueue.Service {
 
     constructor(private readonly queueId: string, private readonly redisFactory: RedisFactory) { }
 
     private getDataKey(uid: string): string {
-        return `${TaskQueueImpl.DATA_KEY_PREFIX}:${this.queueId}:${uid}`
+        return `${Const.DATA_KEY_PREFIX}:${this.queueId}:${uid}`
     }
     private getHandledKey(uid: string): string {
-        return `${TaskQueueImpl.DATA_HANDLED_PREFIX}:${this.queueId}:${uid}`
+        return `${Const.DATA_HANDLED_PREFIX}:${this.queueId}:${uid}`
     }
+
+    private getEntryKey(): string {
+        return `${Const.ENTRY_KEY}:${this.queueId}`
+    }
+
+
     upsert(uid: string, wait: Duration, data: string): Promise<void> {
         return this.redisFactory.get().then(client => {
             const dataKey = this.getDataKey(uid)
+            const entryKey = this.getEntryKey()
             return RedisUtils.executeMulti(client.multi()
-                .zadd(TaskQueueImpl.ENTRY_KEY, Time.now().addDuration(wait).milliSeconds(), uid)
+                .zadd(entryKey, Time.now().addDuration(wait).milliSeconds(), uid)
                 .rpush(dataKey, data)
-                .expire(dataKey, wait.seconds() + TaskQueueImpl.DATA_TTL_SEC)
+                .expire(dataKey, wait.add(Const.DATA_TTL).seconds())
                 .del(this.getHandledKey(uid))
             ).then(results => {
                 return Promise.resolve()
@@ -37,13 +47,14 @@ export class TaskQueueImpl implements TaskQueue.Service {
         // TODO: Replace by atomic LUA script
 
         return this.redisFactory.get().then(client => {
-            return client.zrange(TaskQueueImpl.ENTRY_KEY, 0, until.seconds(), "BYSCORE", "LIMIT", 0, maxCount).then(uids => {
+            const entryKey = this.getEntryKey()
+            return client.zrange(entryKey, 0, until.milliSeconds(), "BYSCORE", "LIMIT", 0, maxCount).then(uids => {
                 if (uids.length) {
                     const multi = uids.reduce((acc, nextUid) => {
                         return acc
-                            .lpop(this.getDataKey(nextUid), 99999) //Empty the whole data list
-                            .set(this.getHandledKey(nextUid), "dummy", "EX", until.seconds() + TaskQueueImpl.HANDLED_TTL_SEC, "NX")
-                    }, client.multi()).zrem(TaskQueueImpl.ENTRY_KEY, ...uids)
+                            .lpop(this.getDataKey(nextUid), 999999) //Empty the whole data list
+                            .set(this.getHandledKey(nextUid), "dummy", "EX", Const.HANDLED_TTL.seconds(), "NX")
+                    }, client.multi()).zrem(entryKey, ...uids)
                     return RedisUtils.executeMulti(multi).then(result => {
                         const entries = _.range(0, uids.length).flatMap(index => {
                             const uid = uids[index]

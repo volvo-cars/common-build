@@ -1,6 +1,6 @@
+import { JobRef } from "../../domain-model/job-ref/job-ref"
 import { Refs } from "../../domain-model/refs"
 import { RepositorySource } from "../../domain-model/repository-model/repository-source"
-import { JobRef } from "./job-ref"
 
 export namespace JobExecutor {
     export interface Listener {
@@ -15,25 +15,24 @@ export namespace JobExecutor {
         startJob(key: Key): void
         abortJob(key: Key): void
         setListener(listener: Listener): void
+        setInfoUrl(key: JobExecutor.Key, url: string): void
     }
 
     export class Key {
-        constructor(public readonly source: RepositorySource, public readonly ref: JobRef, public readonly sha: Refs.ShaRef) { }
+        constructor(public readonly source: RepositorySource, public readonly jobRef: JobRef.Ref) { }
         private static DELIMITER = "|"
         serialize(): string {
-            return `${this.source.asString()}${Key.DELIMITER}${this.ref.serialize()}${Key.DELIMITER}${this.sha.sha}`
+            return `${this.source.asString()}${Key.DELIMITER}${this.jobRef.serialize()}`
         }
         static deserialize(serialized: string): Key {
-            const [source, ref, sha] = serialized.split(Key.DELIMITER)
-            return new Key(RepositorySource.createFromString(source), JobRef.deserialize(ref), Refs.ShaRef.create(sha))
+            const [source, ref] = serialized.split(Key.DELIMITER)
+            return new Key(RepositorySource.createFromString(source), JobRef.Ref.deserialize(ref))
         }
         toString(): string {
-            return `Job: ${this.source.id}/${this.source.path}/[${this.ref.type}]${this.ref.ref}/${this.sha.sha}`
+            return `Job: ${this.source.asString()}[${this.jobRef}]`
         }
         equals(other: Key): boolean {
-            return this.source.id === other.source.id && this.source.path === other.source.path &&
-                this.ref.type === other.ref.type && this.ref.ref === other.ref.ref &&
-                this.sha.sha === other.sha.sha
+            return this.source.equals(other.source) && this.jobRef.equals(other.jobRef)
         }
     }
 }

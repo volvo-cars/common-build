@@ -10,9 +10,9 @@ describe("Repository model spec", () => {
 
         const unique = RepositorySource.unique([r1, r2, r3, r1, r2, r3])
         expect(unique.length).toBe(3)
-        expect(unique.find(r => { return r.isEqual(r1) })).toBeDefined()
-        expect(unique.find(r => { return r.isEqual(r2) })).toBeDefined()
-        expect(unique.find(r => { return r.isEqual(r3) })).toBeDefined()
+        expect(unique.find(r => { return r.equals(r1) })).toBeDefined()
+        expect(unique.find(r => { return r.equals(r2) })).toBeDefined()
+        expect(unique.find(r => { return r.equals(r3) })).toBeDefined()
 
     })
     it("Test asString and createFromString", async () => {

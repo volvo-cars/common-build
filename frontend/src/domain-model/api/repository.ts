@@ -1,4 +1,5 @@
 import { Expose, Type } from "class-transformer"
+import { BuildLogEvents } from "../buildlog-events/buildlog-events"
 import { Refs } from "../refs"
 import { RepositoryModel } from "../repository-model/repository-model"
 import { RepositorySource } from "../repository-model/repository-source"
@@ -240,6 +241,29 @@ export namespace ApiRepository {
 
         constructor(buildSystemInfo: BuildSystemInfo) {
             this.buildSystemInfo = buildSystemInfo
+        }
+    }
+
+    export class BuildLogRequest {
+        @Expose()
+        @Type(() => RepositorySource)
+        public source: RepositorySource
+
+        @Expose()
+        public sha: string
+        constructor(source: RepositorySource, sha: string) {
+            this.source = source
+            this.sha = sha
+        }
+    }
+
+    export class BuildLogResponse {
+        @Expose()
+        @Type(() => BuildLogEvents.BuildLog)
+        public log: BuildLogEvents.BuildLog
+
+        constructor(log: BuildLogEvents.BuildLog) {
+            this.log = log
         }
     }
 }

@@ -10,6 +10,7 @@ import { GlobalConfigView } from './global-configuration/global-config-view'
 import { RepositoryState } from './repository-state/repository-state'
 import { FaExternalLinkAlt as ExternalIcon } from 'react-icons/fa';
 import { Styles } from '../Styles'
+import { BuildLogs } from './build-logs/build-logs'
 export const RepositoryViewContainer = () => {
     const params = useParams()
 
@@ -72,6 +73,7 @@ export const RepositoryViewContainer = () => {
                         <Routes>
                             <Route path="config" element={<GlobalConfigView source={source} />} />
                             <Route path="state" element={<RepositoryState source={source} />} />
+                            <Route path="logs/:sha" element={<BuildLogs source={source} />} />
                         </Routes>
                     </Col>
                 </Row>

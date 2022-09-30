@@ -4,6 +4,7 @@ import Router from "koa-router"
 import _ from 'lodash'
 import rawBody from 'raw-body'
 import { Readable } from 'stream'
+import { BuildLog } from '../../buildlog/buildlog'
 import { CynosureApiConnectorFactory } from '../../cynosure/cynosure-api-connector/cynosure-api-connector-factory'
 import { ApiRepository } from "../../domain-model/api/repository"
 import { Refs } from '../../domain-model/refs'
@@ -25,7 +26,7 @@ import { RouterFactory } from "../router-factory"
 const logger = createLogger(loggerName(__filename))
 
 export class AdminRepositoryRouterFactory implements RouterFactory {
-    constructor(private systemFilesAccess: SystemFilesAccess, private buildSystem: BuildSystem, private repositoryAccessFactory: RepositoryAccessFactory, private repositoryModelFactory: RepositoryFactory, private cynosureApiConnectorFactory: CynosureApiConnectorFactory, private localGitFactory: LocalGitFactory) { }
+    constructor(private systemFilesAccess: SystemFilesAccess, private buildSystem: BuildSystem, private repositoryAccessFactory: RepositoryAccessFactory, private repositoryModelFactory: RepositoryFactory, private cynosureApiConnectorFactory: CynosureApiConnectorFactory, private localGitFactory: LocalGitFactory, private buildLogService: BuildLog.Service) { }
 
     buildRouter(): Promise<Router> {
         const router = new Router({ prefix: "/repository" })
@@ -136,6 +137,14 @@ export class AdminRepositoryRouterFactory implements RouterFactory {
             await this.systemFilesAccess.saveRepositoryConfig(request.source, request.config)
             ctx.body = Codec.toPlain(new ApiRepository.MessageResponse(`Repository config was updated`))
         })
+
+        router.post("/buildlog-events", async (ctx) => {
+            const request = Codec.toInstance(ctx.request.rawBody, ApiRepository.BuildLogRequest)
+            const sha = Refs.ShaRef.create(request.sha)
+            const log = await this.buildLogService.get(request.source, sha)
+            ctx.body = Codec.toPlain(new ApiRepository.BuildLogResponse(log))
+        })
+
         router.post("/update-content", async (ctx) => {
             const storageId = _.first([ctx.request.query["storage"]].flat())
             const repoId = _.first([ctx.request.query["id"]].flat())

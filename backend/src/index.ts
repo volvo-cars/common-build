@@ -49,6 +49,7 @@ import { TaskQueueFactoryImpl } from './task-queue/task-queue-factory-impl'
 import { ShutdownManagerImpl } from './shutdown-manager/shutdown-manager-impl'
 import { KoaServiceWrapper } from './shutdown-manager/koa-service-wrapper'
 import { ActiveSystemImpl } from './active-system/active-system-impl'
+import { BuildLogServiceImpl } from './buildlog/buildlog-impl'
 const logger = createLogger("main")
 logger.info("Starting CommonBuild server...")
 
@@ -98,11 +99,16 @@ createConfig(args.config, [new VaultValueSubstitutor(vaultService), new FileValu
     const activeRepositories = createActiveRepositories(redisFactory)
 
     const SYSTEM_ID_VAR_NAME = "SYSTEM_ID"
+    const FRONTEND_URL_VAR_NAME = "FRONTEND_URL"
     const systemId = process.env[SYSTEM_ID_VAR_NAME]
     if (!systemId) {
         throw new Error(`Missing EnvVar: ${SYSTEM_ID_VAR_NAME}`)
     }
     logger.info(`Starting system with systemId:${systemId}`)
+    const frontEndUrl = process.env[FRONTEND_URL_VAR_NAME]
+    if (!frontEndUrl) {
+        throw new Error(`Missing EnvVar: ${FRONTEND_URL_VAR_NAME}`)
+    }
 
     //DEV
     let preloadRepositories: RepositorySource[] | undefined
@@ -139,7 +145,7 @@ createConfig(args.config, [new VaultValueSubstitutor(vaultService), new FileValu
     })
     const repositoryFactory = new RepositoryFactoryImpl(redisFactory, repositoryAccessFactory)
 
-
+    const buildLogService = new BuildLogServiceImpl(redisFactory, frontEndUrl)
     const cynosureApiConnectorFactory = createCynosureConnectorFactory(redisFactory, config.services.sources)
     const taskQueueFactory = new TaskQueueFactoryImpl(redisFactory)
     const cynosureJobExecutor = new CynosureJobExecutor(cynosureApiConnectorFactory, taskQueueFactory.createQueue("cynosure"))
@@ -153,15 +159,15 @@ createConfig(args.config, [new VaultValueSubstitutor(vaultService), new FileValu
     const dependencyStorage = new DependencyStoragImpl(redisFactory)
     const scanner = new ScannerImpl([new GoogleRepoScannerProvider(repositoryAccessFactory, config.services.sources), new DependenciesYamlScannerProvider(systemFilesAccess), new BuildYamlScannerProvider(systemFilesAccess)])
     const dependencyLookupProviderFactory = new DependencyLookupProviderFactoryImpl(repositoryFactory, artifactoryFactory, dockerRegistryFactory, redisFactory)
-    const scannerManager = new ScannerManagerImpl(repositoryAccessFactory, repositoryFactory, activeRepositories, scanner, dependencyStorage, dependencyLookupProviderFactory, redisFactory, artifactoryFactory)
+    const scannerManager = new ScannerManagerImpl(repositoryAccessFactory, repositoryFactory, activeRepositories, scanner, dependencyStorage, dependencyLookupProviderFactory, redisFactory, artifactoryFactory, activeSystem)
 
     let publisherManager = new PublisherManagerImpl(systemFilesAccess, artifactoryFactory, dockerRegistryFactory)
-    const buildSystem = new BuildSystemImpl(redisFactory, new SystemTime(), cynosureJobExecutor, repositoryAccessFactory, repositoryFactory, activeRepositories, publisherManager, scannerManager, localGitFactory, activeSystem, config.engine || { concurrency: 1 })
+    const buildSystem = new BuildSystemImpl(redisFactory, new SystemTime(), cynosureJobExecutor, repositoryAccessFactory, repositoryFactory, activeRepositories, publisherManager, scannerManager, localGitFactory, activeSystem, buildLogService, config.engine || { concurrency: 1 })
 
     const routerFactories: RouterFactory[] = [
         new CynosureRouterFactory(buildSystem, redisFactory),
         new AdminMajorsRouterFactory(majorService, majorApplicationService, activeRepositories),
-        new AdminRepositoryRouterFactory(systemFilesAccess, buildSystem, repositoryAccessFactory, repositoryFactory, cynosureApiConnectorFactory, localGitFactory),
+        new AdminRepositoryRouterFactory(systemFilesAccess, buildSystem, repositoryAccessFactory, repositoryFactory, cynosureApiConnectorFactory, localGitFactory, buildLogService),
         new AdminRouterFactory(activeRepositories, repositoryAccessFactory, repositoryFactory, majorService, activeSystem)
     ]
 

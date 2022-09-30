@@ -92,7 +92,8 @@ export class GerritStreamListener implements ShutdownManager.Service {
                                                             changeInfo.branch,
                                                             changeInfo.subject,
                                                             changeInfo.hashtags || [],
-                                                            changeNumber
+                                                            changeNumber,
+                                                            `https://${_.trimEnd(this.listenerConfig.config.https, "/")}/c/${source.path}/+/${changeNumber}`
                                                         )
                                                         if (!changeInfo.is_private) {
                                                             logger.debug(`Processing ${update}.`)

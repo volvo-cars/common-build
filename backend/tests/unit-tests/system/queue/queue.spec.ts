@@ -1,10 +1,10 @@
 import { describe, expect, it, beforeEach, afterAll } from '@jest/globals'
 import _ from 'lodash'
+import { JobRef } from '../../../../src/domain-model/job-ref/job-ref'
 import { Refs } from '../../../../src/domain-model/refs'
 import { RepositorySource } from '../../../../src/domain-model/repository-model/repository-source'
 import { createForTest } from '../../../../src/redis/redis-factory'
 import { Update } from '../../../../src/system/build-system'
-import { JobRef, JobRefType } from '../../../../src/system/job-executor/job-ref'
 import { BuildState } from '../../../../src/system/queue/build-state'
 import { buildQueue, Queue, QueueListener, QueueStatus } from '../../../../src/system/queue/queue'
 import { MockIncrementTime } from '../../../helpers/mock-time'
@@ -43,15 +43,15 @@ describe("Testing queue functionality", () => {
         }
 
         let [queue, mockTime, queueListener] = createQueue()
-        let ref = JobRef.create(JobRefType.UPDATE, updateId)
+        let ref1 = new JobRef.UpdateRef(update1.id, update1.sha)
         await queue.upsert(update1)
-        expect(queueListener.hasEntry(source, JobRef.create(JobRefType.UPDATE, update1.id), update1.sha, QueueStatus.QUEUED)).toBe(true)
-        expect((await queue.getStatus(update1.source, ref, update1.sha))?.current().status).toBe(QueueStatus.STARTING)
-        expect(queueListener.hasEntry(source, ref, update1.sha, QueueStatus.STARTING)).toBe(true)
+        expect(queueListener.hasEntry(source, ref1, QueueStatus.QUEUED)).toBe(true)
+        expect((await queue.getStatus(update1.source, ref1))?.current().status).toBe(QueueStatus.STARTING)
+        expect(queueListener.hasEntry(source, ref1, QueueStatus.STARTING)).toBe(true)
 
 
-        await queue.addStatus(source, ref, update1.sha, QueueStatus.STARTED)
-        expect((await queue.getStatus(source, ref, update1.sha))?.current().status).toBe(QueueStatus.STARTED)
+        await queue.addStatus(source, ref1, QueueStatus.STARTED)
+        expect((await queue.getStatus(source, ref1))?.current().status).toBe(QueueStatus.STARTED)
 
         let sha2 = Refs.ShaRef.create(_.repeat("2", 40))
         let update2 = <Update>{
@@ -64,8 +64,9 @@ describe("Testing queue functionality", () => {
         }
 
         await queue.upsert(update2)
-        expect((await queue.getStatus(source, JobRef.create(JobRefType.UPDATE, update2.id), update2.sha))?.current().status).toBe(QueueStatus.STARTING)
-        expect(queueListener.hasEntry(source, ref, update1.sha, QueueStatus.ABORTED)).toBe(true)
+        let ref2 = new JobRef.UpdateRef(update2.id, update2.sha)
+        expect((await queue.getStatus(source, ref2))?.current().status).toBe(QueueStatus.STARTING)
+        expect(queueListener.hasEntry(source, ref1, QueueStatus.ABORTED)).toBe(true) //Cancelled previous
 
 
     })
@@ -97,27 +98,27 @@ describe("Testing queue functionality", () => {
         }
 
         let [queue, mockTime, queueListener] = createQueue()
-        let ref1 = JobRef.create(JobRefType.UPDATE, updateId1)
-        let ref2 = JobRef.create(JobRefType.UPDATE, updateId2)
+        let ref1 = new JobRef.UpdateRef(update1.id, update1.sha)
+        let ref2 = new JobRef.UpdateRef(update2.id, update2.sha)
         await queue.upsert(update1)
-        expect((await queue.getStatus(source, ref1, update1.sha))?.current().status).toBe(QueueStatus.STARTING)
-        expect(queueListener.hasEntry(source, ref1, update1.sha, QueueStatus.STARTING)).toBe(true)
+        expect((await queue.getStatus(source, ref1))?.current().status).toBe(QueueStatus.STARTING)
+        expect(queueListener.hasEntry(source, ref1, QueueStatus.STARTING)).toBe(true)
 
-        await queue.addStatus(source, ref1, update1.sha, QueueStatus.STARTED)
-        expect(queueListener.hasEntry(source, ref1, update1.sha, QueueStatus.STARTED)).toBe(true)
+        await queue.addStatus(source, ref1, QueueStatus.STARTED)
+        expect(queueListener.hasEntry(source, ref1, QueueStatus.STARTED)).toBe(true)
 
         await queue.upsert(update2)
-        expect(queueListener.hasEntry(source, ref2, update2.sha, QueueStatus.QUEUED)).toBe(true)
-        expect(queueListener.hasEntry(source, ref2, update2.sha, QueueStatus.STARTING)).toBe(false)
+        expect(queueListener.hasEntry(source, ref2, QueueStatus.QUEUED)).toBe(true)
+        expect(queueListener.hasEntry(source, ref2, QueueStatus.STARTING)).toBe(false)
 
-        await queue.addStatus(source, ref1, update1.sha, QueueStatus.SUCCEESS)
-        expect(queueListener.hasEntry(source, ref1, update1.sha, QueueStatus.SUCCEESS)).toBe(true)
+        await queue.addStatus(source, ref1, QueueStatus.SUCCEESS)
+        expect(queueListener.hasEntry(source, ref1, QueueStatus.SUCCEESS)).toBe(true)
 
-        expect(queueListener.hasEntry(source, ref2, update2.sha, QueueStatus.STARTING)).toBe(true)
-        await queue.addStatus(source, ref2, update2.sha, QueueStatus.STARTED)
-        expect(queueListener.hasEntry(source, ref2, update2.sha, QueueStatus.STARTED)).toBe(true)
-        await queue.addStatus(source, ref2, update2.sha, QueueStatus.SUCCEESS)
-        expect(queueListener.hasEntry(source, ref2, update2.sha, QueueStatus.SUCCEESS)).toBe(true)
+        expect(queueListener.hasEntry(source, ref2, QueueStatus.STARTING)).toBe(true)
+        await queue.addStatus(source, ref2, QueueStatus.STARTED)
+        expect(queueListener.hasEntry(source, ref2, QueueStatus.STARTED)).toBe(true)
+        await queue.addStatus(source, ref2, QueueStatus.SUCCEESS)
+        expect(queueListener.hasEntry(source, ref2, QueueStatus.SUCCEESS)).toBe(true)
 
 
     })
@@ -131,30 +132,30 @@ type ExecutorQueueType = ExecutorQueueTypeStart | ExecutorQueueTypeAbort
 
 
 class MockQueueListenerState {
-    constructor(public source: RepositorySource, public ref: JobRef, public sha: Refs.ShaRef, public status: QueueStatus) { }
+    constructor(public source: RepositorySource, public ref: JobRef.Ref, public status: QueueStatus) { }
 
     equals(other: MockQueueListenerState): boolean {
-        return this.source.id === other.source.id && this.source.path === other.source.path &&
-            this.ref.type === other.ref.type && this.ref.ref === other.ref.ref &&
-            this.sha.sha === other.sha.sha && this.status === other.status
+        return this.source.equals(other.source) &&
+            this.ref.equals(other.ref) &&
+            this.status === other.status
     }
 
     toString(): string {
-        return `${this.source.id}/${this.source.path}[${this.sha}]=[${this.status}]`
+        return `${this.source}[${this.ref}]=[${this.status}]`
     }
 
 }
 
 class MockQueueListener implements QueueListener {
     log: MockQueueListenerState[] = []
-    onQueueUpdated(source: RepositorySource, ref: JobRef, sha: Refs.ShaRef, buildState: BuildState): Promise<void> {
-        let state = new MockQueueListenerState(source, ref, sha, buildState.current().status)
+    onQueueUpdated(source: RepositorySource, ref: JobRef.Ref, buildState: BuildState): Promise<void> {
+        let state = new MockQueueListenerState(source, ref, buildState.current().status)
         this.log.push(state)
         return Promise.resolve()
     }
 
-    hasEntry(source: RepositorySource, ref: JobRef, sha: Refs.ShaRef, status: QueueStatus): boolean {
-        let searchEntry = new MockQueueListenerState(source, ref, sha, status)
+    hasEntry(source: RepositorySource, ref: JobRef.Ref, status: QueueStatus): boolean {
+        let searchEntry = new MockQueueListenerState(source, ref, status)
         return _.findIndex(this.log, (entry: MockQueueListenerState) => {
             return searchEntry.equals(entry)
         }) >= 0
