@@ -16,6 +16,8 @@ export namespace JobRef {
          */
         abstract key(): Key
 
+        abstract logId(): string
+
         abstract withSha(sha: Refs.ShaRef): Ref
 
         serialize(): string {
@@ -41,8 +43,6 @@ export namespace JobRef {
 
     export class UpdateRef extends Ref {
 
-
-
         @Expose()
         readonly updateId: string
         constructor(updateId: string, sha: Refs.ShaRef) {
@@ -61,6 +61,9 @@ export namespace JobRef {
             return new Key(this.updateId)
         }
 
+        logId(): string {
+            return `update-${this.updateId}`
+        }
 
         toString(): string {
             return `UpdateJobRef:${this.updateId}@${this.sha.sha}`
@@ -95,6 +98,10 @@ export namespace JobRef {
 
         key(): Key {
             return new Key(this.branch.name)
+        }
+
+        logId(): string {
+            return `${this.branch.name}-${this.sha.sha}`
         }
 
         toString(): string {

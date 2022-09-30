@@ -1,5 +1,6 @@
 import { useContext } from "react";
 import { Alert, Col, Container, Row } from "react-bootstrap";
+import { CtrlMarkdown } from "../forms/ctrl-markdown";
 import NotificationContext, { NotificationType } from "./notification-provider";
 
 export const NotificationView = () => {
@@ -16,7 +17,7 @@ export const NotificationView = () => {
             <Container fluid>
                 <Row>
                     <Col className="align-items-center">
-                        <Alert variant={variant}>{notification.text}</Alert>
+                        <Alert variant={variant}><CtrlMarkdown markdown={notification.text} /></Alert>
                     </Col>
                 </Row>
             </Container>

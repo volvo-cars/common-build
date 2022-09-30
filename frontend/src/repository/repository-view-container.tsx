@@ -73,7 +73,7 @@ export const RepositoryViewContainer = () => {
                         <Routes>
                             <Route path="config" element={<GlobalConfigView source={source} />} />
                             <Route path="state" element={<RepositoryState source={source} />} />
-                            <Route path="logs/:sha" element={<BuildLogs source={source} />} />
+                            <Route path="logs/:id" element={<BuildLogs source={source} />} />
                         </Routes>
                     </Col>
                 </Row>

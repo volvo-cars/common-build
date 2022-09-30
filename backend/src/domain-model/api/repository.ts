@@ -250,10 +250,10 @@ export namespace ApiRepository {
         public source: RepositorySource
 
         @Expose()
-        public sha: string
-        constructor(source: RepositorySource, sha: string) {
+        public logId: string
+        constructor(source: RepositorySource, logId: string) {
             this.source = source
-            this.sha = sha
+            this.logId = logId
         }
     }
 

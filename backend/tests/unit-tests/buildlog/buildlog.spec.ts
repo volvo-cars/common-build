@@ -20,8 +20,8 @@ describe("Buildlog service", () => {
         const source1 = new RepositorySource("a1", "a2")
         const source2 = new RepositorySource("b1", "b2")
         const source3 = new RepositorySource("c1", "c2")
-        const ref1 = TestUtils.sha("000")
-        const ref2 = TestUtils.sha("222")
+        const ref1 = "logId1"
+        const ref2 = "logId1"
         const before = new Date()
         await service.add("A1", BuildLogEvents.Level.DEBUG, source1, ref1)
         await service.add("A2", BuildLogEvents.Level.INFO, source1, ref1)
@@ -55,7 +55,7 @@ describe("Buildlog service", () => {
     it("Test with metaUrls", async () => {
         const service = new BuildLogServiceImpl(redisFactory, "https://dummy-url")
         const source1 = new RepositorySource("a1", "a2")
-        const ref1 = TestUtils.sha("111")
+        const ref1 = "logId1"
         await service.add("A1", BuildLogEvents.Level.DEBUG, source1, ref1)
         const log1 = await service.get(source1, ref1)
         expect(log1.entries.length).toBe(1)

@@ -140,8 +140,7 @@ export class AdminRepositoryRouterFactory implements RouterFactory {
 
         router.post("/buildlog-events", async (ctx) => {
             const request = Codec.toInstance(ctx.request.rawBody, ApiRepository.BuildLogRequest)
-            const sha = Refs.ShaRef.create(request.sha)
-            const log = await this.buildLogService.get(request.source, sha)
+            const log = await this.buildLogService.get(request.source, request.logId)
             ctx.body = Codec.toPlain(new ApiRepository.BuildLogResponse(log))
         })
 

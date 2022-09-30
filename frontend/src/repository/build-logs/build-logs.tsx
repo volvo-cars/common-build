@@ -18,26 +18,26 @@ export type Props = {
 }
 
 export const BuildLogs = ({ source }: Props) => {
-    const params = useParams<{ sha: string }>()
-    const sha = params.sha
+    const params = useParams<{ id: string }>()
+    const logId = params.id
     const notification = useNotifications()
     const [log, setLog] = useState<BuildLogEvents.BuildLog | undefined>(undefined)
-    const loadLogs = (loadSha: string) => {
-        Http.createRequest("/api/repository/buildlog-events", HttpMethod.POST).setData(Codec.toPlain(new ApiRepository.BuildLogRequest(source, loadSha))).execute().then((response: AxiosResponse<any>) => {
+    const loadLogs = (loadLogId: string) => {
+        Http.createRequest("/api/repository/buildlog-events", HttpMethod.POST).setData(Codec.toPlain(new ApiRepository.BuildLogRequest(source, loadLogId))).execute().then((response: AxiosResponse<any>) => {
             setLog(Codec.toInstance(response.data, ApiRepository.BuildLogResponse).log)
         }).catch((e: AxiosError) => {
             notification.error(`${e}`)
         })
     }
 
-    if (sha) {
+    if (logId) {
         useEffect(() => {
-            loadLogs(sha)
-            const timer = setInterval(() => { loadLogs(sha) }, 10000)
+            loadLogs(logId)
+            const timer = setInterval(() => { loadLogs(logId) }, 10000)
             return () => {
                 clearTimeout(timer)
             }
-        }, [sha])
+        }, [logId])
         if (log) {
             if (log.entries.length) {
                 const start = log.entries[log.entries.length - 1].timestamp
@@ -73,7 +73,7 @@ export const BuildLogs = ({ source }: Props) => {
             </Row>)
         }
     } else {
-        notification.error("Missing /git-sha in url.")
+        notification.error("Missing `/id` in url.")
         return (null)
     }
 

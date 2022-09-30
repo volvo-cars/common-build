@@ -107,6 +107,8 @@ export class BuildSystemImpl implements BuildSystem, QueueListener, JobExecutor.
                 if (repositoryConfig) {
                     let isActive = await this.isActive(job)
                     if (isActive) {
+                        //Fire and forget
+                        this.updateQueue(job, QueueStatus.SUCCEESS)
                         //TODO: Check labels on RepositoryConfig to get the correct action.
                         const publications = <DependencyRef.ArtifactRef[]>(await this.publisherManager.publications(job.source, ref.sha))
                         await this.publisherManager.addMetaData(job.source, ref.sha, publications)
@@ -118,22 +120,17 @@ export class BuildSystemImpl implements BuildSystem, QueueListener, JobExecutor.
                             repositoryAccess.merge(job.source.path, ref.updateId)
                                 .then(async updatedBranch => {
                                     logger.info(`Merged ${job}`)
-                                    return this.updateQueue(job, QueueStatus.SUCCEESS).then(() => {
-                                        return updatedBranch
-                                    })
-                                })
-                                .then(updatedBranch => {
+                                    const branchJobRef = new JobRef.BranchRef(updatedBranch.ref, updatedBranch.sha)
+                                    this.buildLogService.add(`Merged to target branch \`${updatedBranch.ref.name}\`. Continued [log](${branchJobRef.logId()})`, BuildLogEvents.Level.INFO, job.source, job.jobRef.logId())
+                                    this.buildLogService.add(`Merged update \`${ref.updateId}\`. Previous [log](${ref.logId()})`, BuildLogEvents.Level.INFO, job.source, branchJobRef.logId())
                                     if (action === RepositoryConfig.Action.Release) {
-                                        return this.release(job.source, updatedBranch, VersionType.MINOR).then(version => {
-                                            logger.info(`Released ${version.toString()} ${job} (${updatedBranch.ref})`)
-                                        })
+                                        return this.release(job.source, updatedBranch, VersionType.MINOR).then(version => { })
                                     } else {
                                         return Promise.resolve()
                                     }
-                                })
-                                .catch(error => {
+                                }).catch(error => {
                                     logger.error(`Could not merge ${job}:${error}`)
-                                    //return Promise.reject(error)
+                                    this.buildLogService.add(`Could not merge: ${error}`, BuildLogEvents.Level.ERROR, job.source, job.jobRef.logId())
                                 })
                         }
                     } else {
@@ -152,28 +149,36 @@ export class BuildSystemImpl implements BuildSystem, QueueListener, JobExecutor.
     }
 
     async release(source: RepositorySource, branch: Refs.Branch, versionType: VersionType): Promise<Version> {
-        const repositoryModel = this.repositoryModelFactory.get(source)
-        const nextVersion = (await repositoryModel.modelReader()).nextVersion(branch.ref, versionType)
+        const branchJobRef = new JobRef.BranchRef(branch.ref, branch.sha)
         //Clear
-        await Promise.all([this.localGitFactory.invalidate(source), this.repositoryModelFactory.get(source).invalidate()])
-        const publishedRefs = await this.publisherManager.publications(source, branch.sha)
-        await this.publisherManager.publish(publishedRefs, branch.sha, nextVersion)
+        return Promise.all([this.localGitFactory.invalidate(source), this.repositoryModelFactory.get(source).invalidate()]).then(async () => {
+            const repositoryModel = this.repositoryModelFactory.get(source)
+            const nextVersion = (await repositoryModel.modelReader()).nextVersion(branch.ref, versionType)
 
-
-        logger.debug(`Published binary versions ${nextVersion.asString()}:${publishedRefs.join(",")} from ${source}/${branch.ref.name}`)
-        logger.info(`Releasing next version ${nextVersion.asString()} from ${source}/${branch.ref.name}@${branch.sha}`)
-        return this.repositoryAcccessFactory.createAccess(source.id).createTag(source.path, branch.sha, `v${nextVersion.asString()}`, `Released by Common-build`).then(tag => {
-            return nextVersion
-        }).then(nextVersion => {
-            this.buildLogService.add(`Released version \`${nextVersion.asString()}\`. Published references: ${publishedRefs.map(r => { return `\`${r.toString()}\`` }).join(", ")}`, BuildLogEvents.Level.INFO, source, branch.sha)
-            return nextVersion
-        })
-            .catch(e => {
-                this.buildLogService.add(`Could not release: ${e}`, BuildLogEvents.Level.ERROR, source, branch.sha)
-
-                logger.error(`Error while creating source tag: ${e}. NOTE: Binaries must be cleaned up.`)
+            return this.publisherManager.publications(source, branch.sha).then(publishedRefs => {
+                if (publishedRefs.length) {
+                    return this.publisherManager.publish(publishedRefs, branch.sha, nextVersion).then(() => {
+                        this.buildLogService.add(`Published references: ${publishedRefs.map(r => { return `\`${r.toString()}:${nextVersion.asString()}\`` }).join(", ")}`, BuildLogEvents.Level.INFO, source, branchJobRef.logId())
+                    })
+                } else {
+                    return Promise.resolve()
+                }
+            }).then(() => {
+                logger.info(`Releasing next version ${nextVersion.asString()} from ${source}/${branch.ref.name}@${branch.sha}`)
+                return this.repositoryAcccessFactory.createAccess(source.id).createTag(source.path, branch.sha, `v${nextVersion.asString()}`, `Released by Common-build`).then(tag => {
+                    this.buildLogService.add(`Released version \`${nextVersion.asString()}\``, BuildLogEvents.Level.INFO, source, branchJobRef.logId())
+                    return nextVersion
+                })
+                    .catch(e => {
+                        this.buildLogService.add(`Could not create Git-release: ${e}`, BuildLogEvents.Level.ERROR, source, branchJobRef.logId())
+                        logger.error(`Error while creating source tag: ${e}. NOTE: Binaries must be cleaned up.`)
+                        return Promise.reject(e)
+                    })
+            }).catch(e => {
+                this.buildLogService.add(`Could not publish binaries. ${e}`, BuildLogEvents.Level.ERROR, source, branchJobRef.logId())
                 return Promise.reject(e)
             })
+        })
     }
 
     private updateQueue(job: JobExecutor.Key, status: QueueStatus): Promise<void> {
@@ -194,7 +199,7 @@ export class BuildSystemImpl implements BuildSystem, QueueListener, JobExecutor.
 
     onQueueUpdated(source: RepositorySource, ref: JobRef.Ref, buildState: BuildState): void {
         const cmd = async () => {
-            this.buildLogService.add(`Queue transition: \`${buildState.current().status}\` `, BuildLogEvents.Level.INFO, source, ref.sha)
+            this.buildLogService.add(`Queue transition: \`${buildState.current().status}\` `, BuildLogEvents.Level.INFO, source, ref.logId())
             return this.redis.get().then(async client => {
                 const status = buildState.current().status
                 const job = new JobExecutor.Key(source, ref)
@@ -204,10 +209,10 @@ export class BuildSystemImpl implements BuildSystem, QueueListener, JobExecutor.
                         this.repositoryAcccessFactory.createAccess(source.id).rebase(source.path, ref.updateId)
                             .then(async newSha => {
                                 if (newSha) {
-                                    this.buildLogService.add(`Rebased on tip of target branch to \`${newSha.sha}\`.`, BuildLogEvents.Level.INFO, source, ref.sha)
+                                    this.buildLogService.add(`Rebased on tip of target branch to \`${newSha.sha}\`.`, BuildLogEvents.Level.INFO, source, ref.logId())
                                     logger.info(`Rebased update ${ref} in ${source} sha: ${ref.sha} -> ${newSha}. No more operations. Update event will abort current.`)
                                 } else {
-                                    this.buildLogService.add(`No rebase necessary. Fast-forward possible.`, BuildLogEvents.Level.INFO, source, ref.sha)
+                                    this.buildLogService.add(`No rebase necessary. Fast-forward possible.`, BuildLogEvents.Level.INFO, source, ref.logId())
                                     logger.debug(`Fast-forward possible for ${ref} in ${source}. Continue build start.`)
                                     const dependencyTree = await this.scannerManager.allDependencies(source, ref.sha)
                                     const dependencyProblems = dependencyTree.getProblems()
@@ -223,7 +228,7 @@ export class BuildSystemImpl implements BuildSystem, QueueListener, JobExecutor.
                                     console.log(dependencyTreeLog.join("\n"))
                                     if (dependencyProblems.length) {
                                         this.updateQueue(job, QueueStatus.DEPENDENCY)
-                                        this.buildLogService.add(`Build was aborted due to dependency inbalances: \n ${dependencyProblems.map(p => { return `* ${p.asString()}` }).join("\n")}`, BuildLogEvents.Level.INFO, source, ref.sha)
+                                        this.buildLogService.add(`Build was aborted due to dependency inbalances: \n ${dependencyProblems.map(p => { return `* ${p.asString()}` }).join("\n")}`, BuildLogEvents.Level.WARNING, source, ref.logId())
                                     } else {
                                         let isActive = await this.isActive(job)
                                         if (isActive) {
@@ -289,14 +294,14 @@ export class BuildSystemImpl implements BuildSystem, QueueListener, JobExecutor.
             }).then(async result => {
                 if (result) {
                     const jobKey = new JobExecutor.Key(update.source, new JobRef.UpdateRef(update.id, update.sha))
-                    const infoUrl = this.buildLogService.getLogUrl(update.source, update.sha)
+                    const infoUrl = this.buildLogService.getLogUrl(jobKey.source, jobKey.jobRef.logId())
                     this.jobExecutor.setInfoUrl(jobKey, infoUrl)
                     if (result instanceof BuildConfig.Config) {
-                        this.buildLogService.add(`Received Gerrit \`ref-updated\` event. ID: [${update.id}](${update.url})`, BuildLogEvents.Level.INFO, update.source, update.sha)
+                        this.buildLogService.add(`Received Gerrit \`ref-updated\` event:\n\n* id: [${update.id}](${update.url})\n* commit: \`${update.sha.sha}\``, BuildLogEvents.Level.INFO, jobKey.source, jobKey.jobRef.logId())
                         this.activeRepositories.addActiveRepositories(update.source)
                         return this.queue.upsert(update).then(_ => { return })
                     } else if (result instanceof Error) {
-                        this.buildLogService.add(`Parse error on \`${BuildConfig.FILE_PATH}\`: ${result}`, BuildLogEvents.Level.ERROR, update.source, update.sha)
+                        this.buildLogService.add(`Parse error on \`${BuildConfig.FILE_PATH}\`: ${result}`, BuildLogEvents.Level.ERROR, jobKey.source, jobKey.jobRef.logId())
                         return Promise.resolve()
                     }
                 } else {

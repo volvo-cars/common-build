@@ -13,20 +13,20 @@ const logTTLDays = Duration.fromDays(14)
 export class BuildLogServiceImpl implements BuildLog.Service {
 
     constructor(private redisFactory: RedisFactory, private frontendUrl: string) { }
-    getLogUrl(source: RepositorySource, sha: Refs.ShaRef): string {
-        return `${_.trimEnd(this.frontendUrl, "/")}/repo/${source.id}.${source.path.replace("/", ".")}/logs/${sha.sha}`
+    getLogUrl(source: RepositorySource, logId: string): string {
+        return `${_.trimEnd(this.frontendUrl, "/")}/repo/${source.id}.${source.path.replace("/", ".")}/logs/${logId}`
     }
-    private createEntryKey(source: RepositorySource, sha: Refs.ShaRef): string {
-        return `build-log-entries:${source.asString()}:${sha.sha}`
+    private createEntryKey(source: RepositorySource, logId: string): string {
+        return `build-log-entries:${source.asString()}:${logId}`
     }
-    private createMetaKey(source: RepositorySource, sha: Refs.ShaRef): string {
-        return `build-log-meta${source.asString()}:${sha.sha}`
+    private createMetaKey(source: RepositorySource, logId: string): string {
+        return `build-log-meta${source.asString()}:${logId}`
     }
 
-    get(source: RepositorySource, sha: Refs.ShaRef): Promise<BuildLogEvents.BuildLog> {
+    get(source: RepositorySource, logId: string): Promise<BuildLogEvents.BuildLog> {
         return this.redisFactory.get().then(client => {
-            const entriesKey = this.createEntryKey(source, sha)
-            const metaKey = this.createMetaKey(source, sha)
+            const entriesKey = this.createEntryKey(source, logId)
+            const metaKey = this.createMetaKey(source, logId)
             return RedisUtils.executeMulti(client.multi()
                 .lrange(entriesKey, 0, 9999999)
                 .hgetall(metaKey)
@@ -43,9 +43,9 @@ export class BuildLogServiceImpl implements BuildLog.Service {
         })
     }
 
-    addMetaUrl(name: string, url: string, source: RepositorySource, sha: Refs.ShaRef): Promise<void> {
+    addMetaUrl(name: string, url: string, source: RepositorySource, logId: string): Promise<void> {
         return this.redisFactory.get().then(client => {
-            const metaKey = this.createMetaKey(source, sha)
+            const metaKey = this.createMetaKey(source, logId)
             return RedisUtils.executeMulti(client.multi()
                 .hset(metaKey, { [name]: url })
                 .expire(metaKey, logTTLDays.seconds())
@@ -53,10 +53,10 @@ export class BuildLogServiceImpl implements BuildLog.Service {
         })
     }
 
-    add(message: string, level: BuildLogEvents.Level, source: RepositorySource, sha: Refs.ShaRef): Promise<void> {
+    add(message: string, level: BuildLogEvents.Level, source: RepositorySource, logId: string): Promise<void> {
         return this.redisFactory.get().then(client => {
-            const entriesKey = this.createEntryKey(source, sha)
-            const metaKey = this.createMetaKey(source, sha)
+            const entriesKey = this.createEntryKey(source, logId)
+            const metaKey = this.createMetaKey(source, logId)
             return RedisUtils.executeMulti(client.multi()
                 .rpush(entriesKey, Codec.toJson(new BuildLogEvents.Entry(message, level, Time.now().toDate())))
                 .expire(entriesKey, logTTLDays.seconds())
