@@ -102,7 +102,6 @@ export class BuildSystemImpl implements BuildSystem, QueueListener, JobExecutor.
     onJobSuccess(job: JobExecutor.Key): void {
         const ref = job.jobRef
         if (ref instanceof JobRef.UpdateRef) {
-
             logger.info(`Job success: ${job}`)
             this.systemFilesAccess.getRepositoryConfig(job.source).then(async repositoryConfig => {
                 if (repositoryConfig) {
@@ -205,8 +204,10 @@ export class BuildSystemImpl implements BuildSystem, QueueListener, JobExecutor.
                         this.repositoryAcccessFactory.createAccess(source.id).rebase(source.path, ref.updateId)
                             .then(async newSha => {
                                 if (newSha) {
+                                    this.buildLogService.add(`Rebased on tip of target branch to \`${newSha.sha}\`.`, BuildLogEvents.Level.INFO, source, ref.sha)
                                     logger.info(`Rebased update ${ref} in ${source} sha: ${ref.sha} -> ${newSha}. No more operations. Update event will abort current.`)
                                 } else {
+                                    this.buildLogService.add(`No rebase necessary. Fast-forward possible.`, BuildLogEvents.Level.INFO, source, ref.sha)
                                     logger.debug(`Fast-forward possible for ${ref} in ${source}. Continue build start.`)
                                     const dependencyTree = await this.scannerManager.allDependencies(source, ref.sha)
                                     const dependencyProblems = dependencyTree.getProblems()

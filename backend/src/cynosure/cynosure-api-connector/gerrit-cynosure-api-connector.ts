@@ -11,25 +11,57 @@ import { Http, HttpMethod } from "../../utils/http";
 
 import { CynosureApiConnector, CynosureProtocol } from "./cynosure-api-connector";
 const logger = createLogger(loggerName(__filename))
-const productIdCacheTTL = Duration.fromSeconds(60 * 60)
+
+const Consts = {
+    productIdCacheTTL: Duration.fromSeconds(60 * 60),
+    cacheTTL: Math.floor(1 * 24 * 60 * 60 / 1000),
+    setUrlRetryCount: 20,
+    setUrlRetryInterval: Duration.fromSeconds(10)
+}
 
 export class GerritCynosureApiConnector implements CynosureApiConnector {
-    private static cacheTTL = Math.floor(1 * 24 * 60 * 60 / 1000)
+
     constructor(private redisFactory: RedisFactory, private source: ServiceConfig.GerritSourceService) { }
 
     setInfoUrl(productId: CynosureProtocol.ProductId, sha: Refs.ShaRef, url: string): Promise<void> {
-        return Http.createRequest("https://core.messagebus.cynosure.volvocars.biz/api/3.0.0/ProductUpdated", HttpMethod.POST).setData({
-            "productId": {
-                "namespace": productId,
-                "instance": sha.sha
-            },
-            "url": url
-        }).setHeaders({
-            "Content-Type": "application/json"
+
+        const execute = (count?: number): Promise<void> => {
+            const currentCount = count ?? 1
+            if (currentCount < Consts.setUrlRetryCount) {
+                return Http.createRequest("https://core.messagebus.cynosure.volvocars.biz/api/3.0.0/ProductUpdated", HttpMethod.POST).setData({
+                    "productId": {
+                        "namespace": productId,
+                        "instance": sha.sha
+                    },
+                    "url": url
+                }).setHeaders({
+                    "Content-Type": "application/json"
+                }
+                ).execute()
+                    .then((response: AxiosResponse<any>) => {
+                        return Promise.resolve()
+                    }).catch((e: AxiosError) => {
+                        let logMessage = "Unknown"
+                        if (e.response?.status === 404) {
+                            logMessage = `Product instance not yet defined in Cynosure.`
+                        } else {
+                            logMessage = `Error: ${e.response?.status} ${e.response?.statusText}`
+                        }
+                        logger.warn(`Product not known in Cynosure [${currentCount}/${Consts.setUrlRetryCount}] (${productId}/${sha}): ${logMessage} `)
+                        return new Promise<void>((resolve, reject) => {
+                            setTimeout(() => {
+                                logger.debug(`Retrying ${currentCount}/${Consts.setUrlRetryCount} to setInfoUrl on ${productId}/${sha}`)
+                                execute(currentCount + 1).then(resolve).catch(reject)
+                            }, Consts.setUrlRetryInterval.milliSeconds())
+                        })
+                    })
+            } else {
+                logger.warn(`Coult not set infoUrl on product ${productId}/${sha} after ${Consts.setUrlRetryCount} retries. Log link in Cynosure will not be set.`)
+                return Promise.reject(new Error(`Product instance ${productId}/${sha} was found in Cynosure in ${Consts.setUrlRetryCount} retries.`))
+            }
         }
-        ).execute().then((response: AxiosResponse<any>) => {
-            return Promise.resolve()
-        })
+        return execute()
+
     }
 
     findProductId(path: RepositoryPath): Promise<string | undefined> {
@@ -55,7 +87,7 @@ export class GerritCynosureApiConnector implements CynosureApiConnector {
                     ).execute().then((response: AxiosResponse<CynosureProtocol.FindProductResponse>) => {
                         if (response.data.length > 0) {
                             const productId = response.data[0].namespace
-                            client.set(cacheKey, productId, "EX", GerritCynosureApiConnector.cacheTTL)
+                            client.set(cacheKey, productId, "EX", Consts.cacheTTL)
                             return Promise.resolve(productId)
                         } else {
                             return Promise.resolve(undefined)

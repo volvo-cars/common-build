@@ -60,7 +60,9 @@ export class CynosureJobExecutor implements JobExecutor.Executor, ShutdownManage
         if (connector) {
             connector.findProductId(key.source.path).then(productId => {
                 if (productId) {
-                    return connector.setInfoUrl(productId, key.jobRef.sha, url)
+                    return connector.setInfoUrl(productId, key.jobRef.sha, url).catch(e => {
+                        logger.error(`Could not set infoUrl on ${key}: ${e}`)
+                    })
                 } else {
                     return Promise.resolve()
                 }
