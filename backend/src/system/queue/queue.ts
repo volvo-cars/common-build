@@ -37,7 +37,7 @@ export namespace Queue {
         [Queue.State.STARTED]: [Queue.State.ABORTED, Queue.State.FAILURE, Queue.State.SUCCEESS, Queue.State.ERROR, Queue.State.TIMEOUT],
         [Queue.State.SUCCEESS]: [],
         [Queue.State.FAILURE]: [],
-        [Queue.State.ABORTED]: [Queue.State.ABORTED],
+        [Queue.State.ABORTED]: [],
         [Queue.State.CANCELLED]: [],
         [Queue.State.ERROR]: [],
         [Queue.State.TIMEOUT]: [],

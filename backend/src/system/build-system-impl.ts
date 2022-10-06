@@ -59,8 +59,8 @@ export class BuildSystemImpl implements BuildSystem.Service, Queue.Listener, Job
     }
 
 
+
     onJobStarted(job: JobExecutor.Key): void {
-        console.log(`******* ${job}`)
         this.updateQueue(job, Queue.State.STARTED)
     }
     onJobError(job: JobExecutor.Key): void {
@@ -73,15 +73,65 @@ export class BuildSystemImpl implements BuildSystem.Service, Queue.Listener, Job
         this.updateQueue(job, Queue.State.ABORTED)
     }
     onJobSuccess(job: JobExecutor.Key): void {
-        const ref = job.jobRef
-        if (ref instanceof JobRef.UpdateRef) {
-            logger.info(`Job success: ${job}`)
-            this.systemFilesAccess.getRepositoryConfig(job.source).then(async repositoryConfig => {
-                if (repositoryConfig) {
-                    let isActive = await this.isActive(job)
-                    if (isActive) {
-                        //Fire and forget
-                        this.updateQueue(job, Queue.State.SUCCEESS)
+        this.updateQueue(job, Queue.State.SUCCEESS)
+    }
+
+    private updateQueue(job: JobExecutor.Key, status: Queue.State): Promise<void> {
+        return this.queue.addState(job, status).then(completed => {
+            return Promise.resolve()
+        }).catch(e => {
+            logger.error(`Error while updating queue: ${e} for ${job}. No operation`)
+            this.buildLogService.add(`Unexpected error when updating queue: ${e}. Please report.`, BuildLogEvents.Level.WARNING, job.source, job.jobRef.canonicalId)
+        })
+    }
+    onQueueTransition(job: JobExecutor.Key, state: Queue.State, previousState: Queue.State | undefined): void {
+        this.buildLogService.add(`Job \`${state}\` for \`${job.jobRef.sha.sha}\`.`, BuildLogEvents.Level.INFO, job.source, job.jobRef.canonicalId)
+        logger.info(`Queue updated: ${state} -> ${job}`)
+        if (state === Queue.State.STARTING) {
+            const ref = job.jobRef
+            const source = job.source
+            if (ref instanceof JobRef.UpdateRef) {
+                this.repositoryAcccessFactory.createAccess(source.id).rebase(source.path, ref.updateId)
+                    .then(async newSha => {
+                        if (newSha) {
+                            this.buildLogService.add(`Rebased on tip of target branch to \`${newSha.sha}\`.`, BuildLogEvents.Level.INFO, source, ref.canonicalId)
+                            logger.info(`Rebased update ${ref} in ${source} sha: ${ref.sha} -> ${newSha}. No more operations. Update event will abort current.`)
+                            this.updateQueue(job, Queue.State.REBASED)
+                        } else {
+                            this.buildLogService.add(`No rebase necessary. Fast-forward possible.`, BuildLogEvents.Level.INFO, source, ref.canonicalId)
+                            logger.debug(`Fast-forward possible for ${ref} in ${source}. Continue build start.`)
+                            const dependencyTree = await this.scannerManager.allDependencies(source, ref.sha)
+                            const dependencyProblems = dependencyTree.getProblems()
+
+                            const dependencyTreeLog = [`***************** Dependency tree for ${source}/${ref}`]
+                            dependencyTree.traverse((ref: DependencyRef.Ref, version: Version, depth: number) => {
+                                dependencyTreeLog.push(`${_.repeat(" ", depth * 3)} ${ref.toString()}: ${version.asString()}`)
+                            })
+                            dependencyTreeLog.push(`***************** Problem count: ${dependencyProblems.length}`)
+                            if (dependencyProblems.length) {
+                                dependencyTreeLog.push(`Dependendency problems with ${source}/${ref}: ${dependencyProblems.map(p => { return p.asString() }).join(", ")}. Signalling dependency issue to queue.`)
+                            }
+                            console.log(dependencyTreeLog.join("\n"))
+                            if (dependencyProblems.length) {
+                                this.updateQueue(job, Queue.State.DEPENDENCY)
+                                this.buildLogService.add(`Build was aborted due to dependency inbalances: \n ${dependencyProblems.map(p => { return `* ${p.asString()}` }).join("\n")}`, BuildLogEvents.Level.WARNING, source, ref.canonicalId)
+                            } else {
+                                this.jobExecutor.startJob(job)
+                            }
+                        }
+                    })
+                    .catch(error => {
+                        logger.debug(`Error while rebasing update ${job}: ${error}`)
+                        return this.updateQueue(job, Queue.State.CONFLICT)
+                    })
+            } else {
+                throw new Error(`Only Update builds are supported: ${ref} builds not supported. `)
+            }
+        } else if (state == Queue.State.SUCCEESS) {
+            const ref = job.jobRef
+            if (ref instanceof JobRef.UpdateRef) {
+                this.systemFilesAccess.getRepositoryConfig(job.source).then(async repositoryConfig => {
+                    if (repositoryConfig) {
                         //TODO: Check labels on RepositoryConfig to get the correct action.
                         const publications = <DependencyRef.ArtifactRef[]>(await this.publisherManager.publications(job.source, ref.sha))
                         await this.publisherManager.addMetaData(job.source, ref.sha, publications)
@@ -97,9 +147,10 @@ export class BuildSystemImpl implements BuildSystem.Service, Queue.Listener, Job
                                     this.buildLogService.add(`Merged to target branch \`${updatedBranch.ref.name}\`. Continued [log](${branchJobRef.canonicalId})`, BuildLogEvents.Level.INFO, job.source, job.jobRef.canonicalId)
                                     this.buildLogService.add(`Merged update \`${ref.updateId}\`. Previous [log](${ref.canonicalId})`, BuildLogEvents.Level.INFO, job.source, branchJobRef.canonicalId)
                                     if (action === RepositoryConfig.Action.Release) {
-                                        return this.release(job.source, updatedBranch, VersionType.MINOR).then(version => { })
-                                    } else {
-                                        return Promise.resolve()
+                                        this.release(job.source, updatedBranch, VersionType.MINOR).then(version => { }).catch(error => {
+                                            logger.error(`Could not release ${job}:${error}`)
+                                            this.buildLogService.add(`Could not release: ${error}`, BuildLogEvents.Level.ERROR, job.source, job.jobRef.canonicalId)
+                                        })
                                     }
                                 }).catch(error => {
                                     logger.error(`Could not merge ${job}:${error}`)
@@ -107,17 +158,21 @@ export class BuildSystemImpl implements BuildSystem.Service, Queue.Listener, Job
                                 })
                         }
                     } else {
-                        logger.debug(`${job} was registered aborted just before success. No processing.`)
+                        logger.warn(`Missing repository config for ${job.source}. No action taken.`)
                     }
-                } else {
-                    logger.warn(`Missing repository config for ${job.source}. No action taken.`)
-                }
-            }).catch(e => {
-                this.updateQueue(job, Queue.State.FAILURE)
-            })
-
-        } else {
-            logger.error(`Not implemented onJobSuccess for ${ref}`)
+                }).catch(e => {
+                    logger.error(`Error while post-processing success ${job}: ${e}`)
+                })
+            } else {
+                logger.error(`Not implemented onJobSuccess for ${ref}`)
+            }
+        } else if (state === Queue.State.QUEUED) {
+            this.startJobsFromQueue()
+        } else if (Queue.isStateTerminal(state)) {
+            if (state === Queue.State.ABORTED) {
+                this.jobExecutor.abortJob(job)
+            }
+            this.startJobsFromQueue()
         }
     }
 
@@ -154,6 +209,7 @@ export class BuildSystemImpl implements BuildSystem.Service, Queue.Listener, Job
         })
     }
 
+
     private startJobsFromQueue(): Promise<void> {
         return this.queue.start(10).then(startedJobs => {
             if (startedJobs.length) {
@@ -163,78 +219,9 @@ export class BuildSystemImpl implements BuildSystem.Service, Queue.Listener, Job
     }
 
 
-
-    private async isActive(job: JobExecutor.Key): Promise<boolean> {
-        return this.queue.getState(job).then(status => {
-            return status ? true : false
-        })
-    }
     getStatus(job: JobExecutor.Key): Promise<Queue.State | undefined> {
         return this.queue.getState(job)
     }
-
-    private updateQueue(job: JobExecutor.Key, status: Queue.State): Promise<void> {
-        return this.queue.addState(job, status).then(completed => {
-            return Promise.resolve()
-        })
-    }
-
-    onQueueTransition(job: JobExecutor.Key, state: Queue.State, previousState: Queue.State | undefined): void {
-        this.buildLogService.add(`Queue: \`${state}\` for \`${job.jobRef.sha.sha}\`.`, BuildLogEvents.Level.INFO, job.source, job.jobRef.canonicalId)
-        this.redisFactory.get().then(async client => {
-            logger.info(`Queue updated: ${job} -> ${state}`)
-            if (state === Queue.State.STARTING) {
-                const ref = job.jobRef
-                const source = job.source
-                if (ref instanceof JobRef.UpdateRef) {
-                    this.repositoryAcccessFactory.createAccess(source.id).rebase(source.path, ref.updateId)
-                        .then(async newSha => {
-                            if (newSha) {
-                                this.buildLogService.add(`Rebased on tip of target branch to \`${newSha.sha}\`.`, BuildLogEvents.Level.INFO, source, ref.canonicalId)
-                                logger.info(`Rebased update ${ref} in ${source} sha: ${ref.sha} -> ${newSha}. No more operations. Update event will abort current.`)
-                                this.updateQueue(job, Queue.State.REBASED)
-                            } else {
-                                this.buildLogService.add(`No rebase necessary. Fast-forward possible.`, BuildLogEvents.Level.INFO, source, ref.canonicalId)
-                                logger.debug(`Fast-forward possible for ${ref} in ${source}. Continue build start.`)
-                                const dependencyTree = await this.scannerManager.allDependencies(source, ref.sha)
-                                const dependencyProblems = dependencyTree.getProblems()
-
-                                const dependencyTreeLog = [`***************** Dependency tree for ${source}/${ref}`]
-                                dependencyTree.traverse((ref: DependencyRef.Ref, version: Version, depth: number) => {
-                                    dependencyTreeLog.push(`${_.repeat(" ", depth * 3)} ${ref.toString()}: ${version.asString()}`)
-                                })
-                                dependencyTreeLog.push(`***************** Problem count: ${dependencyProblems.length}`)
-                                if (dependencyProblems.length) {
-                                    dependencyTreeLog.push(`Dependendency problems with ${source}/${ref}: ${dependencyProblems.map(p => { return p.asString() }).join(", ")}. Signalling dependency issue to queue.`)
-                                }
-                                console.log(dependencyTreeLog.join("\n"))
-                                if (dependencyProblems.length) {
-                                    this.updateQueue(job, Queue.State.DEPENDENCY)
-                                    this.buildLogService.add(`Build was aborted due to dependency inbalances: \n ${dependencyProblems.map(p => { return `* ${p.asString()}` }).join("\n")}`, BuildLogEvents.Level.WARNING, source, ref.canonicalId)
-                                } else {
-                                    this.jobExecutor.startJob(job)
-                                }
-                            }
-                        })
-                        .catch(error => {
-                            logger.debug(`Error while rebasing update ${job}: ${error}`)
-                            return this.updateQueue(job, Queue.State.CONFLICT)
-                        })
-                } else {
-                    throw new Error(`Only Update builds are supported: ${ref} builds not supported. `)
-                }
-            } else if (state === Queue.State.QUEUED) {
-                this.startJobsFromQueue()
-            } else if (Queue.isStateTerminal(state)) {
-                if (state === Queue.State.ABORTED) {
-                    this.jobExecutor.abortJob(job)
-                }
-                this.startJobsFromQueue()
-            }
-        })
-
-    }
-
 
 
 

@@ -7,7 +7,7 @@ import { QueueRedis } from "./queue-redis";
 const getLocalQueueKey = (job: JobExecutor.Key): string => { return `queue:${job.source.asString()}:local:${job.jobRef.queueId.id}` }
 
 const getGlobalReadyQueueKey = (): string => {
-    return `queue:global`
+    return `queue:ready`
 }
 const getGlobalActiveQueueKey = (): string => {
     return `queue:active`
