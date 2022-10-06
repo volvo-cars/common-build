@@ -53,8 +53,6 @@ import { BuildSystemImpl } from './system/build-system-impl'
 const logger = createLogger("main")
 logger.info("Starting CommonBuild server...")
 
-//Fix type safety from Yarn - should be inferred from options config
-
 const args: any = yargs.options({
     config: {
         type: 'string',
@@ -79,6 +77,7 @@ const vaultService = new VaultServiceImpl(new VaultOptions(
     ensureString(process.env.VAULT_TOKEN, "ENV[VAULT_TOKEN] missing."),
     true
 ))
+
 
 createConfig(args.config, [new VaultValueSubstitutor(vaultService), new FileValueSubstitutor(), new EnvValueSubstitutor()]).then(async config => {
     console.log("Config:" + JSON.stringify(vaultService.mask(config), null, 2))

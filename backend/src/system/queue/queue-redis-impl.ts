@@ -20,7 +20,7 @@ export class QueueRedisImpl implements QueueRedis.Service {
 
     constructor(redisFactory: RedisFactory, private time: Time, debug: boolean = false) {
         this.invoker = redisFactory.get().then(client => {
-            return RedisLua.create(client, debug, ...[{ name: "push", keyCount: 3 }, { name: "start", keyCount: 2 }, { name: "complete", keyCount: 3 }].map(s => { return RedisLua.Script.fromPath(s.name, s.keyCount, `${__dirname}/lua/${s.name}.lua`) }))
+            return RedisLua.create(client, debug, ...[{ name: "push", keyCount: 3 }, { name: "start", keyCount: 2 }, { name: "complete", keyCount: 3 }].map(s => { return RedisLua.Script.fromPath(s.name, s.keyCount, `./lua/${s.name}.lua`) }))
         })
     }
 
