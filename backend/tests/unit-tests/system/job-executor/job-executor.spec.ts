@@ -8,8 +8,8 @@ describe("JobExecytor key", () => {
     const repo2 = new RepositorySource("A", "B")
     const sha1 = TestUtils.sha("01010")
     const sha2 = TestUtils.sha("02020")
-    const ref1 = new JobRef.UpdateRef("A", sha1)
-    const ref2 = new JobRef.UpdateRef("B", sha2)
+    const ref1 = new JobRef.UpdateRef("A", "dummy", sha1)
+    const ref2 = new JobRef.UpdateRef("B", "dummy", sha2)
 
 
     it("Equals", async () => {

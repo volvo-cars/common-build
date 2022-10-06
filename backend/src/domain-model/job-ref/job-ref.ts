@@ -14,9 +14,11 @@ export namespace JobRef {
         /**
          * The unique key of this ref
          */
+        abstract get queueId(): Key
+
         abstract key(): Key
 
-        abstract logId(): string
+        abstract get canonicalId(): string
 
         abstract withSha(sha: Refs.ShaRef): Ref
 
@@ -45,23 +47,32 @@ export namespace JobRef {
 
         @Expose()
         readonly updateId: string
-        constructor(updateId: string, sha: Refs.ShaRef) {
+
+        @Expose()
+        readonly targetBranch: string
+
+        constructor(updateId: string, targetBranch: string, sha: Refs.ShaRef) {
             super(sha)
             this.updateId = updateId
+            this.targetBranch = targetBranch
         }
         protected fields(): string[] {
-            return [this.updateId, this.sha.sha]
+            return [this.updateId, this.targetBranch, this.sha.sha]
         }
 
         withSha(sha: Refs.ShaRef): UpdateRef {
-            return new UpdateRef(this.updateId, sha)
+            return new UpdateRef(this.targetBranch, this.updateId, sha)
+        }
+
+        get queueId(): Key {
+            return new Key(`integration_${this.targetBranch}`)
         }
 
         key(): Key {
             return new Key(this.updateId)
         }
 
-        logId(): string {
+        get canonicalId(): string {
             return `update-${this.updateId}`
         }
 
@@ -69,12 +80,12 @@ export namespace JobRef {
             return `UpdateJobRef:${this.updateId}@${this.sha.sha}`
         }
         static create(fields: string[]): UpdateRef {
-            const [id, sha] = fields
-            return new UpdateRef(id, Refs.ShaRef.create(sha))
+            const [id, targetBranch, sha] = fields
+            return new UpdateRef(id, targetBranch, Refs.ShaRef.create(sha))
         }
         equals(other: Ref): boolean {
             if (other.sha.equals(this.sha) && other instanceof JobRef.UpdateRef) {
-                return other.updateId == this.updateId
+                return other.updateId == this.updateId && other.targetBranch === this.targetBranch
             }
             return false
         }
@@ -96,11 +107,16 @@ export namespace JobRef {
             return new BranchRef(this.branch, sha)
         }
 
-        key(): Key {
-            return new Key(this.branch.name)
+        get queueId(): Key {
+            return new Key(`${this.branch.name}-${this.sha.sha}`)
         }
 
-        logId(): string {
+        key(): Key {
+            return new Key(`${this.branch.name}-${this.sha.sha}`)
+        }
+
+
+        get canonicalId(): string {
             return `${this.branch.name}-${this.sha.sha}`
         }
 

@@ -35,7 +35,6 @@ import { AdminMajorsRouterFactory } from './router/admin/admin-majors-router-fac
 import { AdminRepositoryRouterFactory } from './router/admin/admin-repository-router-factory'
 import { AdminRouterFactory } from './router/admin/admin-router-factory'
 import { RouterFactory } from './router/router-factory'
-import { BuildSystemImpl } from './system/build-system'
 import { createActiveRepositories } from './system/queue/active-repositories'
 import { SystemTime } from './system/time'
 import { ensureString } from './utils/ensures'
@@ -50,6 +49,7 @@ import { ShutdownManagerImpl } from './shutdown-manager/shutdown-manager-impl'
 import { KoaServiceWrapper } from './shutdown-manager/koa-service-wrapper'
 import { ActiveSystemImpl } from './active-system/active-system-impl'
 import { BuildLogServiceImpl } from './buildlog/buildlog-impl'
+import { BuildSystemImpl } from './system/build-system-impl'
 const logger = createLogger("main")
 logger.info("Starting CommonBuild server...")
 
@@ -168,7 +168,7 @@ createConfig(args.config, [new VaultValueSubstitutor(vaultService), new FileValu
         new CynosureRouterFactory(buildSystem, redisFactory),
         new AdminMajorsRouterFactory(majorService, majorApplicationService, activeRepositories),
         new AdminRepositoryRouterFactory(systemFilesAccess, buildSystem, repositoryAccessFactory, repositoryFactory, cynosureApiConnectorFactory, localGitFactory, buildLogService),
-        new AdminRouterFactory(activeRepositories, repositoryAccessFactory, repositoryFactory, majorService, activeSystem)
+        new AdminRouterFactory(activeRepositories, majorService, activeSystem)
     ]
 
     await Promise.all(routerFactories.map(factory => {

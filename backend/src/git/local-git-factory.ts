@@ -50,7 +50,7 @@ export class LocalGitFactoryImpl implements LocalGitFactory {
 
     constructor(private config: SystemConfig.GitCache, private sources: ServiceConfig.SourceService[], private vaultService: VaultService, private redisFactory: RedisFactory, private nodeId: NodeId) { }
 
-    execute<T1>(source: RepositorySource, cmd: GitFunction<T1>, loadMode: LocalGitLoadMode): Promise<T1> {
+    private executeInternal<T1>(source: RepositorySource, cmd: GitFunction<T1>, loadMode: LocalGitLoadMode): Promise<T1> {
         const sourceConfig = this.sources.find(s => { return s.id === source.id })
         if (sourceConfig) {
             const serializedCommand = async () => {
@@ -70,11 +70,12 @@ export class LocalGitFactoryImpl implements LocalGitFactory {
                     const repositoryPath = [this.config.path, _.concat(source.id, source.path.split("/")).join("_")].join("/")
 
                     let initialized = false
+                    if (loadMode === LocalGitLoadMode.REFRESH) {
+                        fsExtra.emptyDirSync(repositoryPath)
+                    }
                     if (!fs.existsSync(repositoryPath)) {
                         fs.mkdirSync(repositoryPath)
                     } else if (!fs.existsSync(`${repositoryPath}/.git`)) {
-                        fsExtra.emptyDirSync(repositoryPath)
-                    } else if (loadMode === LocalGitLoadMode.REFRESH) {
                         fsExtra.emptyDirSync(repositoryPath)
                     } else {
                         initialized = true
@@ -161,6 +162,14 @@ export class LocalGitFactoryImpl implements LocalGitFactory {
         } else {
             return Promise.reject(new Error(`Repository source: ${source.id} not configured.`))
         }
+    }
+
+
+    execute<T1>(source: RepositorySource, cmd: GitFunction<T1>, loadMode: LocalGitLoadMode): Promise<T1> {
+        return this.executeInternal(source, cmd, loadMode).catch(e => {
+            logger.warn(`Git operation ${cmd.description} failed. Retrying with fresh clone for ${source.toString()}`)
+            return this.executeInternal(source, cmd, LocalGitLoadMode.REFRESH)
+        })
 
     }
 

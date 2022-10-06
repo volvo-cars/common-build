@@ -19,15 +19,20 @@ export class MajorsServiceImpl implements MajorsService {
 
     values(cached: boolean): Promise<Majors.Serie[]> {
         return this.redisFactory.get().then(async client => {
-            if (cached) {
-                const values = await client.get(MajorsServiceImpl.STATE_CACHE_KEY)
-                if (values) {
-                    return this.normalize(Codec.toInstances(values, Majors.Serie))
+            try {
+                if (cached) {
+                    const values = await client.get(MajorsServiceImpl.STATE_CACHE_KEY)
+                    if (values) {
+                        return this.normalize(Codec.toInstances(values, Majors.Serie))
+                    }
                 }
+            } catch (e) {
+                return Promise.reject(`Could not load cached series: ${e}`)
             }
             const series = this.normalize(await this.getSourceValues())
-            await client.set(MajorsServiceImpl.STATE_CACHE_KEY, JSON.stringify(Codec.toPlain(series)), "EX", MajorsServiceImpl.STATE_CACHE_TTL)
-            return Promise.resolve(series)
+            return client.set(MajorsServiceImpl.STATE_CACHE_KEY, JSON.stringify(Codec.toPlain(series)), "EX", MajorsServiceImpl.STATE_CACHE_TTL).then(() => {
+                return Promise.resolve(series)
+            })
         })
     }
 

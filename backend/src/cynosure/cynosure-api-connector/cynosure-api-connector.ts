@@ -1,6 +1,13 @@
 import { Refs } from "../../domain-model/refs"
 import { RepositoryPath } from "../../domain-model/repository-model/repository-source"
 
+export enum CynosureTagOp {
+    ADD = "add",
+    REMOVE = "remove"
+}
+
+export const CYNOSURE_START_BUILD_TAG = "ready_to_build"
+
 export interface CynosureApiConnector {
     findProductId(path: RepositoryPath): Promise<CynosureProtocol.ProductId | undefined>
     findActivity(productId: CynosureProtocol.ProductId, sha: Refs.ShaRef, timeout?: number): Promise<CynosureProtocol.Activity | undefined>
@@ -11,8 +18,12 @@ export interface CynosureApiConnector {
      * @return true if started false if not
      */
     startActivity(productId: CynosureProtocol.ProductId, sha: Refs.ShaRef): Promise<boolean>
-    abortActivity(activityId: CynosureProtocol.ActivityId, sha: Refs.ShaRef, reason: string): Promise<void>
+    unstartActivity(productId: CynosureProtocol.ProductId, sha: Refs.ShaRef): Promise<boolean>
+    changeTag(productId: string, sha: Refs.ShaRef, tagValue: string, tagOp: CynosureTagOp): Promise<boolean>
+    abortActivity(activityId: CynosureProtocol.ActivityId, sha: Refs.ShaRef, reason: string): Promise<boolean>
     setInfoUrl(productId: CynosureProtocol.ProductId, sha: Refs.ShaRef, url: string): Promise<void>
+
+
 }
 
 export namespace CynosureProtocol {

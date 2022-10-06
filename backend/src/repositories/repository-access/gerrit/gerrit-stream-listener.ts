@@ -5,19 +5,13 @@ import { RepositorySource } from '../../../domain-model/repository-model/reposit
 import { ServiceConfig } from '../../../domain-model/system-config/service-config'
 import { createLogger, loggerName } from "../../../logging/logging-factory"
 import { ShutdownManager } from '../../../shutdown-manager/shutdown-manager'
-import { Update } from "../../../system/build-system"
+import { BuildSystem, Update } from "../../../system/build-system"
 import { stringNewlineTokenizer } from "../../../utils/string-newline-tokenizer"
 import { ChangeCache } from './change-cache'
 import { parseChange } from './change-parser'
 import { Event } from './stream-model'
 
 const logger = createLogger(loggerName(__filename))
-
-export interface UpdateReceiver {
-    onUpdate(update: Update): Promise<void>
-    onPush(source: RepositorySource, ref: Refs.Ref, newSha: Refs.ShaRef): Promise<void>
-    onDelete(source: RepositorySource, ref: Refs.Ref): Promise<void>
-}
 
 export class GerritStreamListenerConfig {
     constructor(public readonly config: ServiceConfig.GerritSourceService, public readonly user: string, public readonly key: string) { }
@@ -31,7 +25,7 @@ export class GerritStreamListener implements ShutdownManager.Service {
     constructor(private readonly listenerConfig: GerritStreamListenerConfig, private readonly changeCache: ChangeCache, private readonly limitedRepositories: string[] | undefined) {
         this.serviceName = `GerritStreamListener - ${listenerConfig.config.id}`
     }
-    private delayStart(reciever: UpdateReceiver, delaySec: number): void {
+    private delayStart(reciever: BuildSystem.UpdateReceiver, delaySec: number): void {
         logger.debug(`Starting stream-listener ${this.listenerConfig.config.ssh} in ${delaySec} seconds...`)
         setTimeout(() => {
             this.start(reciever)
@@ -42,7 +36,7 @@ export class GerritStreamListener implements ShutdownManager.Service {
         this.client?.end()
         return Promise.resolve()
     }
-    start(receiver: UpdateReceiver): void {
+    start(receiver: BuildSystem.UpdateReceiver): void {
         if (this.active) {
             logger.info(`Starting gerrit listener on: ${this.listenerConfig.config.ssh}`)
             if (this.client) {
@@ -84,7 +78,7 @@ export class GerritStreamListener implements ShutdownManager.Service {
                                                     const sha = Refs.ShaRef.create(event.refUpdate.newRev)
                                                     const changeNumber = change.changeNumber
                                                     const changeInfo = await this.changeCache.getChangeByChangeNumber(source, changeNumber, sha)
-                                                    if (changeInfo) {
+                                                    try {
                                                         const update = new Update(
                                                             source,
                                                             changeInfo.change_id,
@@ -96,13 +90,21 @@ export class GerritStreamListener implements ShutdownManager.Service {
                                                             `https://${_.trimEnd(this.listenerConfig.config.https, "/")}/c/${source.path}/+/${changeNumber}`
                                                         )
                                                         if (!changeInfo.is_private) {
-                                                            logger.debug(`Processing ${update}.`)
-                                                            receiver.onUpdate(update)
+                                                            const dataJson = JSON.stringify(Object.assign({}, changeInfo, { extras: { patchSet: change.patchSetNumber, number: changeNumber } }), null, 2)
+                                                            const comment = `Gerrit \`ref-updated\` [Gerrit](${update.url})\n\n\`\`\`json\n${dataJson}\n\`\`\``
+
+                                                            if (changeInfo.relatedChanges === 0) {
+                                                                logger.debug(`Processing ${update}.`)
+                                                                receiver.onUpdate(update, comment)
+                                                            } else {
+                                                                logger.debug(`Change ${update} is not processable. Contains ${changeInfo.relatedChanges} related changes.`)
+                                                                receiver.onUpdate(update, `Can not process change because it has related changes (bad practice) in a commit chain (${changeInfo.relatedChanges} changes). To resolve: abandon all related changes, reset your working copy to the latest on \`origin/${update.target}\` and re-push a new commit of your change to \`refs/for/${update.target}\`.\n\n${comment}`, "error")
+                                                            }
                                                         } else {
                                                             logger.debug(`Skip processing ${update}. Marked: is_private:true`)
                                                         }
-                                                    } else {
-                                                        logger.warn(`Could not fetch changeId for updateId:${changeNumber}: ${JSON.stringify(event.refUpdate.refName)}`)
+                                                    } catch (e) {
+                                                        logger.warn(`Could not fetch change for updateId:${changeNumber} in ${source}: ${JSON.stringify(event.refUpdate.refName)}: ${e}`)
                                                     }
                                                 }
 

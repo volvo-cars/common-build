@@ -33,7 +33,7 @@ type ProductSourceEvent = ProductStateEvent & {
 const logger = createLogger(loggerName(__filename))
 
 export class CynosureRouterFactory implements RouterFactory {
-    constructor(private buildSystem: BuildSystem, private redis: RedisFactory) { }
+    constructor(private buildSystem: BuildSystem.Service, private redis: RedisFactory) { }
 
     buildRouter(): Promise<Router> {
         const router = new Router({ prefix: "/cynosure" })

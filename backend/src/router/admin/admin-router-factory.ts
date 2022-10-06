@@ -6,24 +6,26 @@ import { ApiRepository } from "../../domain-model/api/repository"
 import { Codec } from "../../domain-model/system-config/codec"
 import { createLogger, loggerName } from "../../logging/logging-factory"
 import { MajorsService } from "../../repositories/majors/majors-service"
-import { RepositoryAccessFactory } from "../../repositories/repository-access/repository-access-factory"
-import { RepositoryFactory } from "../../repositories/repository/repository-factory"
 import { RouterFactory } from "../../router/router-factory"
 import { ActiveRepositories } from "../../system/queue/active-repositories"
-
+import HttpStatusCodes from 'http-status-codes'
 
 const logger = createLogger(loggerName(__filename))
 
 
 export class AdminRouterFactory implements RouterFactory {
-    constructor(private activeRepositories: ActiveRepositories, private repositoryAccessFactory: RepositoryAccessFactory, private repositoryModelFactory: RepositoryFactory, private majorsService: MajorsService, private activeSystem: ActiveSystem.System) { }
+    constructor(private activeRepositories: ActiveRepositories, private majorsService: MajorsService, private activeSystem: ActiveSystem.System) { }
 
     buildRouter(): Promise<Router> {
         const router = new Router({ prefix: "/admin" })
         router.use(koaBodyParser())
         router.get("/config-values", async (ctx) => {
-            const [majorSeries, availableSystems] = await Promise.all([this.majorsService.values(false), this.activeSystem.availableSystems()])
-            ctx.body = Codec.toPlain(new ApiRepository.ConfigValuesResponse(majorSeries, availableSystems))
+            return Promise.all([this.majorsService.values(false), this.activeSystem.availableSystems()]).then(([majorSeries, availableSystems]) => {
+                ctx.body = Codec.toPlain(new ApiRepository.ConfigValuesResponse(majorSeries, availableSystems))
+            }).catch(e => {
+                ctx.response.status = HttpStatusCodes.INTERNAL_SERVER_ERROR
+                ctx.body = `Could not load MajorSeries or AvailableSystems: ${e}`
+            })
         })
         router.get("/repositories", async (ctx) => {
             const repositories = await this.activeRepositories.activeRepositories()

@@ -30,14 +30,9 @@ export const GlobalConfigView = ({ source }: Props) => {
     const [availableSystems, setAvailableSystems] = useState<string[] | undefined>(undefined)
     const notification = useNotifications()
     useEffect(() => {
-        const t = setTimeout(() => {
-            setConfig(undefined)
-        }, 400)
         Http.createRequest("/api/repository/config", HttpMethod.POST).setData(Codec.toPlain(new ApiRepository.SourceRequest(source))).execute().then((response: AxiosResponse<any>) => {
-            clearTimeout(t)
             setConfig(Codec.toInstance(response.data, ApiRepository.ConfigResponse).config)
         }).catch((e: AxiosError) => {
-            clearTimeout(t)
             if (e.response?.status === 404) {
                 setConfig(new RepositoryConfig.Config(
                     new RepositoryConfig.BuildAutomation(RepositoryConfig.Action.Merge, []),
@@ -53,6 +48,7 @@ export const GlobalConfigView = ({ source }: Props) => {
     useEffect(() => {
         Http.createRequest("/api/admin/config-values").execute().then((response: AxiosResponse<any>) => {
             const configValues = Codec.toInstance(response.data, ApiRepository.ConfigValuesResponse)
+            console.log("Got CONFIG", configValues)
             setSeries(configValues.series)
             setAvailableSystems(configValues.availableSystems)
         })

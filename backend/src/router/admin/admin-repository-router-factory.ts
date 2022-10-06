@@ -26,7 +26,7 @@ import { RouterFactory } from "../router-factory"
 const logger = createLogger(loggerName(__filename))
 
 export class AdminRepositoryRouterFactory implements RouterFactory {
-    constructor(private systemFilesAccess: SystemFilesAccess, private buildSystem: BuildSystem, private repositoryAccessFactory: RepositoryAccessFactory, private repositoryModelFactory: RepositoryFactory, private cynosureApiConnectorFactory: CynosureApiConnectorFactory, private localGitFactory: LocalGitFactory, private buildLogService: BuildLog.Service) { }
+    constructor(private systemFilesAccess: SystemFilesAccess, private buildSystem: BuildSystem.Service, private repositoryAccessFactory: RepositoryAccessFactory, private repositoryModelFactory: RepositoryFactory, private cynosureApiConnectorFactory: CynosureApiConnectorFactory, private localGitFactory: LocalGitFactory, private buildLogService: BuildLog.Service) { }
 
     buildRouter(): Promise<Router> {
         const router = new Router({ prefix: "/repository" })

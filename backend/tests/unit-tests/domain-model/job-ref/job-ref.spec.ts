@@ -26,7 +26,7 @@ describe("JobRef To/From Json", () => {
         const updateId = "AAA"
         const shaRef = TestUtils.sha("0")
 
-        const ref = new JobRef.UpdateRef(updateId, shaRef)
+        const ref = new JobRef.UpdateRef(updateId, "dummy", shaRef)
 
         const serialized = ref.serialize()
 

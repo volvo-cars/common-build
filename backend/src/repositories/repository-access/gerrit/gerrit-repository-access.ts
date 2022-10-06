@@ -86,8 +86,9 @@ export class GerritRepositoryAccess extends AbstractRepositoryAccess {
                 return Promise.reject(new Error(`Error while rebasing [${response.status}] ${updateId}`)) // Other error
             }
         }).catch((error: AxiosError) => {
-            logger.error(`Could not merge update ${updateId}: ${error.response?.status} ${error.response?.data}`)
-            return Promise.reject(error)
+            const message = `${error.response?.data} Error code:  ${error.response?.status}`
+            logger.error(message)
+            return Promise.reject(new Error(message))
         })
     }
 
@@ -264,6 +265,17 @@ export class GerritRepositoryAccess extends AbstractRepositoryAccess {
         })
     }
 
+    async internalGetRelatedChanges(updateId: UpdateId, sha: string): Promise<RelatedChangesInfo> {
+        return this.createGerritRequest(`changes/${updateId}/revisions/${sha}/related`).then(response => {
+            if (response.status === 200) {
+                const change = <RelatedChangesInfo>gerritJsonResponseDecode(response.data)
+                return change
+            } else {
+                return Promise.reject(new Error(`Could not fetch ChangeId[${updateId}]: ${response.status}`))
+            }
+        })
+    }
+
     async internalGetBranch(repository: RepositoryPath, branch: string): Promise<BranchInfo> {
         return this.createGerritRequest(`projects/{${repository}}/branches/${branch}`).then(response => {
             if (response.status === 200) {
@@ -314,5 +326,14 @@ export type LabelDefinitionInfo = {
     name: string,
     project: string,
     values: Record<string, string>
+}
+export type RelatedChangeAndCommitInfo = {
+    project: string
+    change_id?: string
+    _change_number?: number
+}
+
+export type RelatedChangesInfo = {
+    changes: RelatedChangeAndCommitInfo[]
 }
 

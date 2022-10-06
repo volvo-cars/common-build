@@ -1,6 +1,5 @@
 import { AxiosError, AxiosResponse } from "axios";
 import _ from 'lodash';
-import { SystemConfig } from "../../config/system-config";
 import { Refs } from "../../domain-model/refs";
 import { RepositoryPath } from "../../domain-model/repository-model/repository-source";
 import { ServiceConfig } from "../../domain-model/system-config/service-config";
@@ -9,7 +8,8 @@ import { RedisFactory } from "../../redis/redis-factory";
 import { Duration } from "../../task-queue/time";
 import { Http, HttpMethod } from "../../utils/http";
 
-import { CynosureApiConnector, CynosureProtocol } from "./cynosure-api-connector";
+import { CynosureApiConnector, CynosureProtocol, CynosureTagOp, CYNOSURE_START_BUILD_TAG } from "./cynosure-api-connector";
+
 const logger = createLogger(loggerName(__filename))
 
 const Consts = {
@@ -22,6 +22,7 @@ const Consts = {
 export class GerritCynosureApiConnector implements CynosureApiConnector {
 
     constructor(private redisFactory: RedisFactory, private source: ServiceConfig.GerritSourceService) { }
+
 
     setInfoUrl(productId: CynosureProtocol.ProductId, sha: Refs.ShaRef, url: string): Promise<void> {
 
@@ -135,23 +136,31 @@ export class GerritCynosureApiConnector implements CynosureApiConnector {
             })
     }
 
-    startActivity(productId: CynosureProtocol.ProductId, sha: Refs.ShaRef): Promise<boolean> {
-        return Http.createRequest("https://core.messagebus.cynosure.volvocars.biz/api/3.0.0/ProductUpdated", HttpMethod.POST).setData({
-            "productId": {
-                "namespace": productId,
-                "instance": sha.sha
-            },
-            "sender": {
-                "service": "common-build"
-            },
-            "_updateOps": {
-                "push": {
-                    "tags": "ready_to_build"
-                }
+    changeTag(productId: string, sha: Refs.ShaRef, tagValue: string, tagOp: CynosureTagOp): Promise<boolean> {
+
+        const updateOps = tagOp === CynosureTagOp.ADD ? {
+            "push": {
+                "tags": tagValue
             }
-        }).setHeaders({
-            "Content-Type": "application/json"
-        }).execute()
+        } : {
+            "pull": {
+                "tags": tagValue
+            }
+        }
+
+        return Http.createRequest("https://core.messagebus.cynosure.volvocars.biz/api/3.0.0/ProductUpdated", HttpMethod.POST)
+            .setData({
+                "productId": {
+                    "namespace": productId,
+                    "instance": sha.sha
+                },
+                "sender": {
+                    "service": "common-build"
+                },
+                "_updateOps": updateOps
+            }).setHeaders({
+                "Content-Type": "application/json"
+            }).execute()
             .then(response => {
                 return Promise.resolve(true)
             })
@@ -162,17 +171,26 @@ export class GerritCynosureApiConnector implements CynosureApiConnector {
                     return Promise.reject(new Error(`Could not start activity for product ${productId}. Error ${e.code} ${e.response?.status}`))
                 }
             })
+
     }
 
-    abortActivity(activityId: string, sha: Refs.ShaRef, reason: string): Promise<void> {
+    startActivity(productId: CynosureProtocol.ProductId, sha: Refs.ShaRef): Promise<boolean> {
+        return this.changeTag(productId, sha, CYNOSURE_START_BUILD_TAG, CynosureTagOp.ADD)
+    }
+
+    unstartActivity(productId: CynosureProtocol.ProductId, sha: Refs.ShaRef): Promise<boolean> {
+        return this.changeTag(productId, sha, CYNOSURE_START_BUILD_TAG, CynosureTagOp.REMOVE)
+    }
+
+    abortActivity(activityId: string, sha: Refs.ShaRef, reason: string): Promise<boolean> {
         logger.debug(`Sending abort signal to Cynosure for ${activityId}/${sha}`)
         return Http.createRequest(`https://admin.chain.cynosure.volvocars.biz/api/1.0.0/job/${activityId}/abort`, HttpMethod.POST).setData({
             comment: `Aborted by CommonBuild: ${reason}`
         }).execute().then(result => {
-            return Promise.resolve()
+            return Promise.resolve(true)
         }).catch((error: AxiosResponse) => {
             logger.debug(`Abort signal to Cynosure responded ${JSON.stringify(error, null, 2)}`)
-            return Promise.resolve()
+            return Promise.resolve(false)
 
         })
     }

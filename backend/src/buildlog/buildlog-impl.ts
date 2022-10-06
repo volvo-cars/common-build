@@ -14,7 +14,7 @@ export class BuildLogServiceImpl implements BuildLog.Service {
 
     constructor(private redisFactory: RedisFactory, private frontendUrl: string) { }
     getLogUrl(source: RepositorySource, logId: string): string {
-        return `${_.trimEnd(this.frontendUrl, "/")}/repo/${source.id}.${source.path.replace("/", ".")}/logs/${logId}`
+        return `${_.trimEnd(this.frontendUrl, "/")}/repo/${source.id}.${source.path.replace(/\//g, ".")}/logs/${logId}`
     }
     private createEntryKey(source: RepositorySource, logId: string): string {
         return `build-log-entries:${source.asString()}:${logId}`
