@@ -21,7 +21,7 @@ Copyright (c) Microsoft
 Copyright (c) 2016 Brian Terlson
 Copyright (c) 2015 Nicolas Bevacqua
 Copyright (c) Microsoft Corporation
-** typescript; version 4.8.3 -- https://www.typescriptlang.org/
+** typescript; version 4.8.4 -- https://www.typescriptlang.org/
 (c) by W3C
 Copyright (c) 2018 WHATWG
 Copyright (c) Microsoft Corporation
@@ -1943,7 +1943,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ------
 
-** source-map; version 0.5.7 -- https://github.com/mozilla/source-map
+** source-map; version 0.6.1 -- https://github.com/mozilla/source-map
 Copyright 2011 The Closure Compiler Authors
 Copyright 2011 Mozilla Foundation and contributors
 Copyright 2014 Mozilla Foundation and contributors
@@ -2059,7 +2059,7 @@ POSSIBILITY OF SUCH DAMAGE.
 
 ------
 
-** caniuse-lite; version 1.0.30001412 -- https://github.com/browserslist/caniuse-lite#readme
+** caniuse-lite; version 1.0.30001414 -- https://github.com/browserslist/caniuse-lite#readme
 
 Attribution 4.0 International
 
@@ -2806,7 +2806,8 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 ------
 
-** electron-to-chromium; version 1.4.262 -- https://github.com/kilian/electron-to-chromium#readme
+** electron-to-chromium; version 1.4.269 -- https://github.com/kilian/electron-to-chromium#readme
+Copyright 2018 Kilian Valkhof
 
 Copyright 2018 Kilian Valkhof
 
@@ -3064,6 +3065,23 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+
+------
+
+** showdown; version 2.1.0 -- http://showdownjs.com/
+(c) 2007 Steven Levithan
+Copyright (c) 2018,2021 ShowdownJS
+
+MIT License
+
+Copyright (c) 2018,2021 ShowdownJS
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
 ------
@@ -5926,7 +5944,7 @@ Copyright (c) 2012-2019 JS Foundation and other contributors
 Copyright JS Foundation and other contributors
 ** loader-utils; version 2.0.2 -- https://github.com/webpack/loader-utils#readme
 Copyright JS Foundation and other contributors
-** schema-utils; version 3.1.1 -- https://github.com/webpack/schema-utils
+** schema-utils; version 2.7.1 -- https://github.com/webpack/schema-utils
 Copyright JS Foundation and other contributors
 ** style-loader; version 3.3.1 -- https://github.com/webpack-contrib/style-loader
 Copyright JS Foundation and other contributors
@@ -6643,24 +6661,22 @@ SOFTWARE.
 
 ------
 
-** @babel/cli; version 7.18.10 -- https://babel.dev/docs/en/next/babel-cli
+** @babel/cli; version 7.19.3 -- https://babel.dev/docs/en/next/babel-cli
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
 ** @babel/code-frame; version 7.18.6 -- https://babel.dev/docs/en/next/babel-code-frame
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
-** @babel/compat-data; version 7.19.1 -- 
+** @babel/compat-data; version 7.19.3 -- 
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
-** @babel/core; version 7.19.1 -- https://babel.dev/docs/en/next/babel-core
+** @babel/core; version 7.19.3 -- https://babel.dev/docs/en/next/babel-core
 Copyright (c) 2021 Titus Wormer
 Copyright Joyent, Inc. and other Node contributors
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
-** @babel/generator; version 7.19.0 -- https://babel.dev/docs/en/next/babel-generator
-Copyright (c) 2014-present Sebastian McKenzie and other contributors
+** @babel/generator; version 7.19.3 -- https://babel.dev/docs/en/next/babel-generator
 ** @babel/helper-annotate-as-pure; version 7.18.6 -- https://babel.dev/docs/en/next/babel-helper-annotate-as-pure
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
 ** @babel/helper-builder-binary-assignment-operator-visitor; version 7.18.9 -- https://babel.dev/docs/en/next/babel-helper-builder-binary-assignment-operator-visitor
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
-** @babel/helper-compilation-targets; version 7.19.1 -- 
-Copyright (c) 2014-present Sebastian McKenzie and other contributors
+** @babel/helper-compilation-targets; version 7.19.3 -- 
 ** @babel/helper-create-class-features-plugin; version 7.19.0 -- 
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
 ** @babel/helper-create-regexp-features-plugin; version 7.19.0 -- 
@@ -6834,13 +6850,12 @@ Copyright (c) 2014-present Sebastian McKenzie and other contributors
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
 ** @babel/plugin-transform-typeof-symbol; version 7.18.9 -- https://babel.dev/docs/en/next/babel-plugin-transform-typeof-symbol
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
-** @babel/plugin-transform-typescript; version 7.19.1 -- https://babel.dev/docs/en/next/babel-plugin-transform-typescript
-Copyright (c) 2014-present Sebastian McKenzie and other contributors
+** @babel/plugin-transform-typescript; version 7.19.3 -- https://babel.dev/docs/en/next/babel-plugin-transform-typescript
 ** @babel/plugin-transform-unicode-escapes; version 7.18.10 -- https://babel.dev/docs/en/next/babel-plugin-transform-unicode-escapes
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
 ** @babel/plugin-transform-unicode-regex; version 7.18.6 -- https://babel.dev/docs/en/next/babel-plugin-transform-unicode-regex
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
-** @babel/preset-env; version 7.19.1 -- https://babel.dev/docs/en/next/babel-preset-env
+** @babel/preset-env; version 7.19.3 -- https://babel.dev/docs/en/next/babel-preset-env
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
 ** @babel/preset-typescript; version 7.18.6 -- https://babel.dev/docs/en/next/babel-preset-typescript
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
@@ -6849,10 +6864,8 @@ Copyright (c) 2014-present, Facebook, Inc.
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
 ** @babel/template; version 7.18.10 -- https://babel.dev/docs/en/next/babel-template
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
-** @babel/traverse; version 7.19.1 -- https://babel.dev/docs/en/next/babel-traverse
-Copyright (c) 2014-present Sebastian McKenzie and other contributors
-** @babel/types; version 7.19.0 -- https://babel.dev/docs/en/next/babel-types
-Copyright (c) 2014-present Sebastian McKenzie and other contributors
+** @babel/traverse; version 7.19.3 -- https://babel.dev/docs/en/next/babel-traverse
+** @babel/types; version 7.19.3 -- https://babel.dev/docs/en/next/babel-types
 
 MIT License
 
@@ -7557,12 +7570,11 @@ Copyright (c) Microsoft Corporation
 Copyright (c) Microsoft Corporation
 ** @types/json-schema; version 7.0.11 -- https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/json-schema
 Copyright (c) Microsoft Corporation
-** @types/lodash; version 4.14.185 -- https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/lodash
+** @types/lodash; version 4.14.186 -- https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/lodash
 Copyright (c) Microsoft Corporation
 ** @types/mime; version 3.0.1 -- https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/mime
 Copyright (c) Microsoft Corporation
-** @types/node; version 16.11.60 -- https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/node
-Copyright (c) Microsoft Corporation
+** @types/node; version 16.11.62 -- https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/node
 ** @types/parse-json; version 4.0.0 -- 
 Copyright (c) Microsoft Corporation
 ** @types/prop-types; version 15.7.5 -- https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/prop-types
@@ -7584,6 +7596,8 @@ Copyright (c) Microsoft Corporation
 ** @types/serve-index; version 1.9.1 -- https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/serve-index
 Copyright (c) Microsoft Corporation
 ** @types/serve-static; version 1.15.0 -- https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/serve-static
+Copyright (c) Microsoft Corporation
+** @types/showdown; version 2.0.0 -- https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/showdown
 Copyright (c) Microsoft Corporation
 ** @types/sockjs; version 0.3.33 -- https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/sockjs
 Copyright (c) Microsoft Corporation
@@ -8698,8 +8712,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ------
 
-** @babel/parser; version 7.19.1 -- https://babel.dev/docs/en/next/babel-parser
-Copyright (c) 2012-2014 by various contributors
+** @babel/parser; version 7.19.3 -- https://babel.dev/docs/en/next/babel-parser
 
 Copyright (C) 2012-2014 by various contributors (see AUTHORS)
 
