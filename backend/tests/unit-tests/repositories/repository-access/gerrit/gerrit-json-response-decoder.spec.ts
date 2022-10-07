@@ -1,8 +1,5 @@
-import exp from 'constants'
 import 'jest'
-import { parseChange } from '../../../../../src/repositories/repository-access/gerrit/change-parser'
 import { gerritJsonResponseDecode } from '../../../../../src/repositories/repository-access/gerrit/gerrit-json-response-decoder'
-import { ensureDefined } from '../../../../../src/utils/ensures'
 
 describe("Test parsing JSON Gerrit decode", () => {
     it("Parsing successful response", async () => {

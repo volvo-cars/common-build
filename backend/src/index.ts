@@ -142,11 +142,12 @@ createConfig(args.config, [new VaultValueSubstitutor(vaultService), new FileValu
             ctx.app.emit('error', error, ctx)
         }
     })
+    const systemTime = new SystemTime()
     const repositoryFactory = new RepositoryFactoryImpl(redisFactory, repositoryAccessFactory)
 
     const buildLogService = new BuildLogServiceImpl(redisFactory, frontEndUrl)
     const cynosureApiConnectorFactory = createCynosureConnectorFactory(redisFactory, config.services.sources)
-    const taskQueueFactory = new TaskQueueFactoryImpl(redisFactory)
+    const taskQueueFactory = new TaskQueueFactoryImpl(redisFactory, systemTime)
     const cynosureJobExecutor = new CynosureJobExecutor(cynosureApiConnectorFactory, taskQueueFactory.createQueue("cynosure"))
     shutdownManager.register(cynosureJobExecutor)
     const systemFilesAccess = new SystemFilesAccessImpl(repositoryAccessFactory)
@@ -161,7 +162,7 @@ createConfig(args.config, [new VaultValueSubstitutor(vaultService), new FileValu
     const scannerManager = new ScannerManagerImpl(repositoryAccessFactory, repositoryFactory, activeRepositories, scanner, dependencyStorage, dependencyLookupProviderFactory, redisFactory, artifactoryFactory, activeSystem)
 
     let publisherManager = new PublisherManagerImpl(systemFilesAccess, artifactoryFactory, dockerRegistryFactory)
-    const buildSystem = new BuildSystemImpl(redisFactory, new SystemTime(), cynosureJobExecutor, repositoryAccessFactory, repositoryFactory, activeRepositories, publisherManager, scannerManager, localGitFactory, activeSystem, buildLogService, config.engine || { concurrency: 1 })
+    const buildSystem = new BuildSystemImpl(redisFactory, systemTime, cynosureJobExecutor, repositoryAccessFactory, repositoryFactory, activeRepositories, publisherManager, scannerManager, localGitFactory, activeSystem, buildLogService, config.engine || { concurrency: 1 })
 
     const routerFactories: RouterFactory[] = [
         new CynosureRouterFactory(buildSystem, redisFactory),

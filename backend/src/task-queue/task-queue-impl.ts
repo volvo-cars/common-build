@@ -3,6 +3,7 @@ import { RedisUtils } from "../redis/redis-utils"
 import { TaskQueue } from "./task-queue"
 import { Duration, Time } from "./time"
 import _ from 'lodash'
+import { TimeProvider } from "../system/time"
 
 const Const = {
     ENTRY_KEY: "task:entries",
@@ -14,7 +15,7 @@ const Const = {
 
 export class TaskQueueImpl implements TaskQueue.Service {
 
-    constructor(private readonly queueId: string, private readonly redisFactory: RedisFactory) { }
+    constructor(private readonly queueId: string, private readonly redisFactory: RedisFactory, private readonly timeProvider: TimeProvider) { }
 
     private getDataKey(uid: string): string {
         return `${Const.DATA_KEY_PREFIX}:${this.queueId}:${uid}`
@@ -34,7 +35,7 @@ export class TaskQueueImpl implements TaskQueue.Service {
             const entryKey = this.getEntryKey()
             return RedisUtils.executeMulti(client.multi()
                 .zadd(entryKey, Time.now().addDuration(wait).milliSeconds(), uid)
-                .rpush(dataKey, data)
+                .zadd(dataKey, this.timeProvider.get(), data)
                 .expire(dataKey, wait.add(Const.DATA_TTL).seconds())
                 .del(this.getHandledKey(uid))
             ).then(results => {
@@ -52,7 +53,7 @@ export class TaskQueueImpl implements TaskQueue.Service {
                 if (uids.length) {
                     const multi = uids.reduce((acc, nextUid) => {
                         return acc
-                            .lpop(this.getDataKey(nextUid), 999999) //Empty the whole data list
+                            .zrange(this.getDataKey(nextUid), 0, 1000) //Empty the whole data list
                             .set(this.getHandledKey(nextUid), "dummy", "EX", Const.HANDLED_TTL.seconds(), "NX")
                     }, client.multi()).zrem(entryKey, ...uids)
                     return RedisUtils.executeMulti(multi).then(result => {

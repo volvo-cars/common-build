@@ -1,7 +1,7 @@
 import { RedisFactory } from "../../redis/redis-factory";
 import { RedisLua } from "../../redis/redis-lua";
 import { JobExecutor } from "../job-executor/job-executor";
-import { Time } from "../time";
+import { TimeProvider } from "../time";
 import { QueueRedis } from "./queue-redis";
 
 const getLocalQueueKey = (job: JobExecutor.Key): string => { return `queue:${job.source.asString()}:local:${job.jobRef.queueId.id}` }
@@ -18,7 +18,7 @@ export class QueueRedisImpl implements QueueRedis.Service {
 
     private invoker: Promise<RedisLua.Invoker>
 
-    constructor(redisFactory: RedisFactory, private time: Time, debug: boolean = false) {
+    constructor(redisFactory: RedisFactory, private time: TimeProvider, debug: boolean = false) {
         this.invoker = redisFactory.get().then(client => {
             return RedisLua.create(client, debug, ...[{ name: "push", keyCount: 3 }, { name: "start", keyCount: 2 }, { name: "complete", keyCount: 3 }].map(s => { return RedisLua.Script.fromPath(s.name, s.keyCount, `./lua/${s.name}.lua`) }))
         })

@@ -27,7 +27,7 @@ import { JobExecutor } from './job-executor/job-executor'
 import { ActiveRepositories } from "./queue/active-repositories"
 import { Queue } from './queue/queue'
 import { QueueImpl } from './queue/queue-impl'
-import { Time } from "./time"
+import { TimeProvider } from "./time"
 
 
 const logger = createLogger(loggerName(__filename))
@@ -39,7 +39,7 @@ export class BuildSystemImpl implements BuildSystem.Service, Queue.Listener, Job
 
     constructor(
         private redisFactory: RedisFactory,
-        private time: Time,
+        private time: TimeProvider,
         private jobExecutor: JobExecutor.Executor,
         private repositoryAcccessFactory: RepositoryAccessFactory,
         private repositoryModelFactory: RepositoryFactory,
@@ -170,6 +170,7 @@ export class BuildSystemImpl implements BuildSystem.Service, Queue.Listener, Job
             this.startJobsFromQueue()
         } else if (Queue.isStateTerminal(state)) {
             if (state === Queue.State.ABORTED) {
+                console.log(`\n\n SENDING ABORT TO JOB EXECUTOR for ${job}\n\n`)
                 this.jobExecutor.abortJob(job)
             }
             this.startJobsFromQueue()

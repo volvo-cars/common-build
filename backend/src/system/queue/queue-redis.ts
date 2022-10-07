@@ -1,7 +1,7 @@
 import { RedisFactory } from "../../redis/redis-factory";
 import { RedisLua } from "../../redis/redis-lua";
 import { JobExecutor } from "../job-executor/job-executor";
-import { Time } from "../time";
+import { TimeProvider } from "../time";
 
 
 

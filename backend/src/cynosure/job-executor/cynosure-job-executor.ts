@@ -116,6 +116,9 @@ export class CynosureJobExecutor implements JobExecutor.Executor, ShutdownManage
                         const connector = this.cynosureApiConnectorFactory.createApiConnector(key.source.id)
                         if (connector) {
                             const states = entry.data.map(s => { return ProcessingStates.JobState.deserialize(s) })
+                            states.reverse() //Last first
+                            //console.log(`JOB ${key}`)
+                            //console.dir(states, { depth: null })
                             const findState = (f: (x: ProcessingStates.JobState) => boolean): ProcessingStates.JobState | undefined => {
                                 return states.find(f)
                             }

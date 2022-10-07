@@ -1,9 +1,9 @@
 
-export interface Time {
+export interface TimeProvider {
     get(): number
 }
 
-export class SystemTime implements Time {
+export class SystemTime implements TimeProvider {
     get(): number {
         return new Date().getTime()
     }

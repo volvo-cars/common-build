@@ -1,6 +1,6 @@
-import { Time } from "../../src/system/time"
+import { TimeProvider } from "../../src/system/time"
 
-export class MockTime implements Time {
+export class MockTime implements TimeProvider {
 
     private time: number = 0
 
@@ -18,7 +18,7 @@ export class MockTime implements Time {
 
 }
 
-export class MockIncrementTime implements Time {
+export class MockIncrementTime implements TimeProvider {
 
     private time: number = 0
 

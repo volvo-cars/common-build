@@ -273,6 +273,13 @@ export class GerritRepositoryAccess extends AbstractRepositoryAccess {
             } else {
                 return Promise.reject(new Error(`Could not fetch ChangeId[${updateId}]: ${response.status}`))
             }
+        }).catch((e: AxiosError) => {
+            if (e.response && e.response.status === 404) {
+                return Promise.resolve(<RelatedChangesInfo>{
+                    changes: []
+                })
+            }
+            return Promise.reject(e)
         })
     }
 

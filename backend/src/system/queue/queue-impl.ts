@@ -3,7 +3,7 @@ import { RedisFactory } from "../../redis/redis-factory";
 import { RedisUtils } from '../../redis/redis-utils';
 import { Duration } from '../../task-queue/time';
 import { JobExecutor } from '../job-executor/job-executor';
-import { Time } from "../time";
+import { TimeProvider } from "../time";
 import { Queue } from "./queue";
 import { QueueRedis } from "./queue-redis";
 import { QueueRedisImpl } from "./queue-redis-impl";
@@ -18,7 +18,7 @@ export class QueueImpl implements Queue.Service {
 
     private queueRedis: QueueRedis.Service
 
-    constructor(private redisFactory: RedisFactory, time: Time, private listener: Queue.Listener, debug: boolean = false) {
+    constructor(private redisFactory: RedisFactory, time: TimeProvider, private listener: Queue.Listener, debug: boolean = false) {
         this.queueRedis = new QueueRedisImpl(redisFactory, time, debug)
     }
 

@@ -8,8 +8,7 @@ import { ShutdownManager } from '../../../shutdown-manager/shutdown-manager'
 import { BuildSystem, Update } from "../../../system/build-system"
 import { stringNewlineTokenizer } from "../../../utils/string-newline-tokenizer"
 import { ChangeCache } from './change-cache'
-import { parseChange } from './change-parser'
-import { Event } from './stream-model'
+import { Events } from './events'
 
 const logger = createLogger(loggerName(__filename))
 
@@ -36,6 +35,11 @@ export class GerritStreamListener implements ShutdownManager.Service {
         this.client?.end()
         return Promise.resolve()
     }
+
+    isProjectActive(project: string): boolean {
+        return !this.limitedRepositories || _.includes(this.limitedRepositories, project)
+    }
+
     start(receiver: BuildSystem.UpdateReceiver): void {
         if (this.active) {
             logger.info(`Starting gerrit listener on: ${this.listenerConfig.config.ssh}`)
@@ -60,65 +64,58 @@ export class GerritStreamListener implements ShutdownManager.Service {
                             })
                             .on("data", (chunk: string) => {
                                 fullData = stringNewlineTokenizer(fullData + chunk, async (event: string) => {
-
-                                    let base = <Event.BaseEvent>JSON.parse(event)
-                                    if (base.type === Event.ChangeType.refUpdated) {
-                                        let event = <Event.RefUpdatedEvent>base
-
-
-                                        if (!this.limitedRepositories || _.includes(this.limitedRepositories, event.refUpdate.project)) {
-                                            const source = new RepositorySource(
-                                                this.listenerConfig.config.id,
-                                                event.refUpdate.project
-                                            )
-                                            //console.log(JSON.stringify(event, null, 2))
-                                            let change = parseChange(event.refUpdate.refName)
-                                            if (change) {
-                                                if (_.isNumber(change.patchSetNumber)) {
-                                                    const sha = Refs.ShaRef.create(event.refUpdate.newRev)
-                                                    const changeNumber = change.changeNumber
-                                                    const changeInfo = await this.changeCache.getChangeByChangeNumber(source, changeNumber, sha)
-                                                    try {
-                                                        const update = new Update(
-                                                            source,
-                                                            changeInfo.change_id,
-                                                            sha,
-                                                            changeInfo.branch,
-                                                            changeInfo.subject,
-                                                            changeInfo.hashtags || [],
-                                                            changeNumber,
-                                                            `https://${_.trimEnd(this.listenerConfig.config.https, "/")}/c/${source.path}/+/${changeNumber}`
-                                                        )
-                                                        if (!changeInfo.is_private) {
-                                                            const dataJson = JSON.stringify(Object.assign({}, changeInfo, { extras: { patchSet: change.patchSetNumber, number: changeNumber } }), null, 2)
-                                                            const comment = `Gerrit \`ref-updated\` [Gerrit](${update.url})\n\n\`\`\`json\n${dataJson}\n\`\`\``
-
-                                                            if (changeInfo.relatedChanges === 0) {
-                                                                logger.debug(`Processing ${update}.`)
-                                                                receiver.onUpdate(update, comment)
-                                                            } else {
-                                                                logger.debug(`Change ${update} is not processable. Contains ${changeInfo.relatedChanges} related changes.`)
-                                                                receiver.onUpdate(update, `Can not process change because it has related changes (bad practice) in a commit chain (${changeInfo.relatedChanges} changes). To resolve: abandon all related changes, reset your working copy to the latest on \`origin/${update.target}\` and re-push a new commit of your change to \`refs/for/${update.target}\`.\n\n${comment}`, "error")
-                                                            }
-                                                        } else {
-                                                            logger.debug(`Skip processing ${update}. Marked: is_private:true`)
-                                                        }
-                                                    } catch (e) {
-                                                        logger.warn(`Could not fetch change for updateId:${changeNumber} in ${source}: ${JSON.stringify(event.refUpdate.refName)}: ${e}`)
-                                                    }
-                                                }
-
-                                            } else {
+                                    const json = JSON.parse(event)
+                                    const type = json["type"]
+                                    if (type) {
+                                        if (type === Events.TypeRefUpdated) {
+                                            const event = <Events.RefUpdateEvent>json
+                                            if (this.isProjectActive(event.refUpdate.project)) {
+                                                const source = new RepositorySource(
+                                                    this.listenerConfig.config.id,
+                                                    event.refUpdate.project
+                                                )
                                                 if (event.refUpdate.newRev === "0000000000000000000000000000000000000000") {
                                                     receiver.onDelete(source, Refs.create(event.refUpdate.refName))
                                                 } else {
                                                     receiver.onPush(source, Refs.create(event.refUpdate.refName), Refs.ShaRef.create(event.refUpdate.newRev))
                                                 }
                                             }
-                                        } else if (this.limitedRepositories) {
-                                            console.log(`Skipped (protected in dev-config): ${this.listenerConfig.config.id}:${event.refUpdate.project}.`)
+                                        } else if (type === Events.TypePatchSetCreated) {
+                                            const event = <Events.PatchSetCreatedEvent>json
+                                            if (!event.change.private) {
+                                                if (this.isProjectActive(event.project)) {
+                                                    const source = new RepositorySource(
+                                                        this.listenerConfig.config.id,
+                                                        event.project
+                                                    )
+                                                    const update = new Update(
+                                                        source,
+                                                        event.change.id,
+                                                        Refs.ShaRef.create(event.patchSet.revision),
+                                                        event.change.branch,
+                                                        event.change.subject,
+                                                        event.change.hashtags || [],
+                                                        event.change.number,
+                                                        event.change.url
+                                                    )
+                                                    const relatedChangesCount = await this.changeCache.getRelatedChanges(source, update.id, update.sha)
+                                                    const dataJson = JSON.stringify(event, null, 2)
+                                                    const comment = `Gerrit \`ref-updated\` [Gerrit](${update.url})\n\n\`\`\`json\n${dataJson}\n\`\`\``
+
+                                                    if (relatedChangesCount === 0) {
+                                                        receiver.onUpdate(update, comment)
+                                                    } else {
+                                                        logger.warn(`Change ${update} is not processable. Contains ${relatedChangesCount} related changes.`)
+                                                        receiver.onUpdate(update, `Can not process change because it has related changes (bad practice) in a commit chain (${relatedChangesCount} changes). To resolve: abandon all related changes, reset your working copy to the latest on \`origin/${update.target}\` and re-push a new commit of your change to \`refs/for/${update.target}\`.\n\n${comment}`, "error")
+                                                    }
+                                                }
+                                            }
+                                        } else if (type === Events.TypeChangeAbandoned) {
+                                            const changeAbandoned = <Events.ChangeAbandonedEvent>json
+                                            if (this.isProjectActive(changeAbandoned.project)) {
+                                                logger.debug(`Abandon-Change event not implemented.`)
+                                            }
                                         }
-                                        //listener.onChange(Object.assign({ implementation: ChangeImplementation.GERRIT }, JSON.parse(event)))
                                     }
                                 })
                             })
