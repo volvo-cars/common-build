@@ -9,8 +9,7 @@
     "start": "npm run build && node build/index.js",
     "start:prod": "node dist/index.js --config config-local.yaml",
     "test": "jest --coverage --detectOpenHandles",
-    "test:watch": "jest --watch",
-    "update-notice": "npx @houdiniproject/noticeme -u"
+    "test:watch": "jest --watch"
   },
   "repository": {
     "type": "git",

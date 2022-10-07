@@ -49,8 +49,7 @@
   },
   "scripts": {
     "start": "webpack-dev-server --mode=development --open --hot",
-    "build": "rimraf ./dist && webpack --mode=production",
-    "update-notice": "npx @houdiniproject/noticeme -u"
+    "build": "rimraf ./dist && webpack --mode=production"
   },
   "browserslist": [
     ">0.2%",
