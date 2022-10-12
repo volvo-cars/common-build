@@ -5,14 +5,17 @@ import { DomainFiles } from "./domain-files"
 export namespace PublicationConfig {
 
 
+  export enum QualifierPackMode {
+    YES = "yes",
+    AUTO = "auto",
+    NO = "no"
+  }
+
   /**
    * @param src local file or directory. If directory it will be compressed with tar.gz
-   * @param classifier if not set it will default to src file- or directory name.
+   * @param name if not set it will default to src file- or directory name.
    */
   export class Qualifier {
-    @Expose()
-    src: string
-    @Expose()
     /*
     pattern: 
       no-name: last segment before pattern. If first => "default.tar.gz"
@@ -26,11 +29,20 @@ export namespace PublicationConfig {
 
 
     */
-    classifier?: string
-    constructor(src: string,
-      classifier?: string) {
+
+    @Expose()
+    src: string
+
+    @Expose()
+    name: string | undefined
+
+    @Expose()
+    pack: QualifierPackMode | undefined
+
+    constructor(src: string, name: string | undefined, pack: QualifierPackMode | undefined) {
       this.src = src
-      this.classifier = classifier
+      this.name = name
+      this.pack = pack
     }
   }
   export class Artifact {
