@@ -19,6 +19,7 @@ import { VersionType } from '../../repositories/repository/repository'
 import { RepositoryFactory } from "../../repositories/repository/repository-factory"
 import { SystemFilesAccess } from "../../repositories/system-files-access"
 import { BuildSystem } from '../../system/build-system'
+import { SourceCache } from '../../system/source-cache'
 import { TarUtils } from '../../utils/tar-utils'
 import { RouterFactory } from "../router-factory"
 
@@ -26,7 +27,7 @@ import { RouterFactory } from "../router-factory"
 const logger = createLogger(loggerName(__filename))
 
 export class AdminRepositoryRouterFactory implements RouterFactory {
-    constructor(private systemFilesAccess: SystemFilesAccess, private buildSystem: BuildSystem.Service, private repositoryAccessFactory: RepositoryAccessFactory, private repositoryModelFactory: RepositoryFactory, private cynosureApiConnectorFactory: CynosureApiConnectorFactory, private localGitFactory: LocalGitFactory, private buildLogService: BuildLog.Service) { }
+    constructor(private systemFilesAccess: SystemFilesAccess, private buildSystem: BuildSystem.Service, private repositoryAccessFactory: RepositoryAccessFactory, private repositoryModelFactory: RepositoryFactory, private cynosureApiConnectorFactory: CynosureApiConnectorFactory, private sourceCache: SourceCache.Service, private buildLogService: BuildLog.Service) { }
 
     buildRouter(): Promise<Router> {
         const router = new Router({ prefix: "/repository" })
@@ -82,7 +83,7 @@ export class AdminRepositoryRouterFactory implements RouterFactory {
                     throw new Error(`Could not find branch for Major ${request.major}.`)
                 }
                 const MAX_COMMIT_COUNT = 100
-                return this.localGitFactory.execute(request.source, LocalGitCommands.getCommits(toBranch.sha, fromVersion ? new Refs.TagRef(`v${fromVersion?.asString()}`) : undefined, MAX_COMMIT_COUNT), LocalGitLoadMode.CACHED).then(commits => {
+                return this.sourceCache.getCommits(request.source, toBranch.sha, fromVersion ? new Refs.TagRef(`v${fromVersion?.asString()}`) : undefined, MAX_COMMIT_COUNT).then(commits => {
                     const apiCommits = commits.map(c => {
                         return new ApiRepository.Commit(c.sha, c.commiter, c.timestamp, c.message)
                     })

@@ -1,4 +1,4 @@
-import { RawModel } from "./raw-model-repository";
+import { RawModel } from "./raw-model"
 import _ from 'lodash'
 import { RepositoryModel } from "../../domain-model/repository-model/repository-model";
 

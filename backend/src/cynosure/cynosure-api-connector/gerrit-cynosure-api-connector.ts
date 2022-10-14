@@ -7,6 +7,7 @@ import { createLogger, loggerName } from "../../logging/logging-factory";
 import { RedisFactory } from "../../redis/redis-factory";
 import { Duration } from "../../task-queue/time";
 import { Http, HttpMethod } from "../../utils/http";
+import { PromiseUtils } from "../../utils/promise-utils";
 
 import { CynosureApiConnector, CynosureProtocol, CynosureTagOp, CYNOSURE_START_BUILD_TAG } from "./cynosure-api-connector";
 
@@ -49,11 +50,9 @@ export class GerritCynosureApiConnector implements CynosureApiConnector {
                             logMessage = `Error: ${e.response?.status} ${e.response?.statusText}`
                         }
                         logger.warn(`Product not known in Cynosure [${currentCount}/${Consts.setUrlRetryCount}] (${productId}/${sha}): ${logMessage} `)
-                        return new Promise<void>((resolve, reject) => {
-                            setTimeout(() => {
-                                logger.debug(`Retrying ${currentCount}/${Consts.setUrlRetryCount} to setInfoUrl on ${productId}/${sha}`)
-                                execute(currentCount + 1).then(resolve).catch(reject)
-                            }, Consts.setUrlRetryInterval.milliSeconds())
+                        return PromiseUtils.waitPromise(Consts.setUrlRetryInterval).then(() => {
+                            logger.debug(`Retrying ${currentCount}/${Consts.setUrlRetryCount} to setInfoUrl on ${productId}/${sha}`)
+                            return execute(currentCount + 1)
                         })
                     })
             } else {

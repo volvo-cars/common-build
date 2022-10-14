@@ -1,0 +1,17 @@
+toolImage: artcsp-docker.ara-artifactory.volvocars.biz/vcc/common-build-agent:0.17.0
+version: 1
+build:
+  steps:
+    - type: compose
+      nodes:
+        rig_runner:
+          image: artcsp-docker.ara-artifactory.volvocars.biz/vcc/common-build-tools/rig-runner:0.1.0
+          labels: rig_runner
+      secrets:
+        hiluser: csp/common-build/hiluser
+        hilpassword:  csp/common-build/hilpassword
+      commands:
+        - cmd: |
+            set -x
+            rig-runner --upload-images --dirs lpa sga hpa hi --flash-nodes lpa sga hpa hi --user=$(cat /run/secrets/hiluser) --password=$(cat /run/secrets/hilpassword)
+          node: rig_runner%          

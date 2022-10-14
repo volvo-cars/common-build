@@ -8,6 +8,7 @@ import { RepositoryAccessFactory } from "../repository-access/repository-access-
 
 export interface MajorsService {
     values(cached: boolean): Promise<Majors.Serie[]>
+    getValue(id: string, cached: boolean): Promise<Majors.Serie | undefined>
     addValue(value: Majors.Value): Promise<Majors.Serie>
 }
 
@@ -16,6 +17,11 @@ export class MajorsServiceImpl implements MajorsService {
     private static STATE_CACHE_KEY = "majors-config"
     private static STATE_CACHE_TTL = 5 * 60
     constructor(private config: SystemConfig.Majors, private redisFactory: RedisFactory, private repositoryAccessFactory: RepositoryAccessFactory) { }
+    getValue(id: string, cached: boolean): Promise<Majors.Serie | undefined> {
+        return this.values(cached).then(all => {
+            return all.find(v => { return v.id === id })
+        })
+    }
 
     values(cached: boolean): Promise<Majors.Serie[]> {
         return this.redisFactory.get().then(async client => {

@@ -15,7 +15,6 @@ import { RepositorySource } from './domain-model/repository-model/repository-sou
 import { ServiceConfig } from './domain-model/system-config/service-config'
 import { LocalGitFactoryImpl } from './git/local-git-factory'
 import { createLogger } from './logging/logging-factory'
-import { DependencyStoragImpl } from './repositories/dependency-manager/dependency-storage'
 import { MajorApplicationServiceImpl } from './repositories/majors/major-application-service'
 import { MajorsServiceImpl } from './repositories/majors/majors-service'
 import { PublisherManagerImpl } from './repositories/publisher/publisher-manager'
@@ -24,12 +23,10 @@ import { GerritRepositoryAccess } from './repositories/repository-access/gerrit/
 import { GerritStreamListener, GerritStreamListenerConfig } from './repositories/repository-access/gerrit/gerrit-stream-listener'
 import { RepositoryAccessFactoryImpl } from './repositories/repository-access/repository-access-factory'
 import { RepositoryFactoryImpl } from './repositories/repository/repository-factory'
-import { DependencyLookupProviderFactoryImpl } from './repositories/scanner/dependency-lookup-provider'
 import { BuildYamlScannerProvider } from './repositories/scanner/providers/build-yaml-scanner-provider'
 import { DependenciesYamlScannerProvider } from './repositories/scanner/providers/dependencies-yaml-scanner-provider'
 import { GoogleRepoScannerProvider } from './repositories/scanner/providers/google-repo-scanner-provider'
 import { ScannerImpl } from './repositories/scanner/scanner-impl'
-import { ScannerManagerImpl } from './repositories/scanner/scanner-manager'
 import { SystemFilesAccessImpl } from './repositories/system-files-access'
 import { AdminMajorsRouterFactory } from './router/admin/admin-majors-router-factory'
 import { AdminRepositoryRouterFactory } from './router/admin/admin-repository-router-factory'
@@ -50,6 +47,12 @@ import { KoaServiceWrapper } from './shutdown-manager/koa-service-wrapper'
 import { ActiveSystemImpl } from './active-system/active-system-impl'
 import { BuildLogServiceImpl } from './buildlog/buildlog-impl'
 import { BuildSystemImpl } from './system/build-system-impl'
+import { DependencyStoragImpl } from './repositories/dependency-manager/dependency-storage-impl'
+import { ScannerManagerImpl } from './repositories/scanner/scanner-manager-impl'
+import { DependencyLookupFactoryImpl } from './repositories/scanner/dependency-lookup-factory-impl'
+import { DependencyLookupCacheImpl } from './repositories/scanner/dependency-lookup-cache-impl'
+import { threadId } from 'worker_threads'
+import { SourceCacheImpl } from './system/source-cache-impl'
 const logger = createLogger("main")
 logger.info("Starting CommonBuild server...")
 
@@ -128,7 +131,7 @@ createConfig(args.config, [new VaultValueSubstitutor(vaultService), new FileValu
     }
     //END DEV
 
-    const localGitFactory = new LocalGitFactoryImpl(config.gitCache, config.services.sources, vaultService, redisFactory, nodeID)
+    const localGitFactory = new LocalGitFactoryImpl(config.gitCache, config.services.sources, vaultService)
     const repositoryAccessFactory = new RepositoryAccessFactoryImpl(config.services.sources, localGitFactory, vaultService)
 
     const app = new Koa({ proxy: true })
@@ -143,7 +146,9 @@ createConfig(args.config, [new VaultValueSubstitutor(vaultService), new FileValu
         }
     })
     const systemTime = new SystemTime()
-    const repositoryFactory = new RepositoryFactoryImpl(redisFactory, repositoryAccessFactory)
+    const sourceCache = new SourceCacheImpl(localGitFactory)
+
+    const repositoryFactory = new RepositoryFactoryImpl(redisFactory, sourceCache)
 
     const buildLogService = new BuildLogServiceImpl(redisFactory, frontEndUrl)
     const cynosureApiConnectorFactory = createCynosureConnectorFactory(redisFactory, config.services.sources)
@@ -158,16 +163,16 @@ createConfig(args.config, [new VaultValueSubstitutor(vaultService), new FileValu
     const majorApplicationService = new MajorApplicationServiceImpl(repositoryFactory, repositoryAccessFactory)
     const dependencyStorage = new DependencyStoragImpl(redisFactory)
     const scanner = new ScannerImpl([new GoogleRepoScannerProvider(repositoryAccessFactory, config.services.sources), new DependenciesYamlScannerProvider(systemFilesAccess), new BuildYamlScannerProvider(systemFilesAccess)])
-    const dependencyLookupProviderFactory = new DependencyLookupProviderFactoryImpl(repositoryFactory, artifactoryFactory, dockerRegistryFactory, redisFactory)
-    const scannerManager = new ScannerManagerImpl(repositoryAccessFactory, repositoryFactory, activeRepositories, scanner, dependencyStorage, dependencyLookupProviderFactory, redisFactory, artifactoryFactory, activeSystem)
-
+    const dependencyLookupCache = new DependencyLookupCacheImpl(repositoryFactory, artifactoryFactory, dockerRegistryFactory, redisFactory)
+    const dependencyLookupFactory = new DependencyLookupFactoryImpl(dependencyLookupCache, systemFilesAccess)
+    const scannerManager = new ScannerManagerImpl(repositoryAccessFactory, repositoryFactory, activeRepositories, scanner, dependencyStorage, dependencyLookupFactory, redisFactory, artifactoryFactory, activeSystem, majorService, systemFilesAccess, sourceCache)
     let publisherManager = new PublisherManagerImpl(systemFilesAccess, artifactoryFactory, dockerRegistryFactory)
-    const buildSystem = new BuildSystemImpl(redisFactory, systemTime, cynosureJobExecutor, repositoryAccessFactory, repositoryFactory, activeRepositories, publisherManager, scannerManager, localGitFactory, activeSystem, buildLogService, config.engine || { concurrency: 1 })
+    const buildSystem = new BuildSystemImpl(redisFactory, systemTime, cynosureJobExecutor, repositoryAccessFactory, repositoryFactory, activeRepositories, publisherManager, scannerManager, activeSystem, buildLogService, dependencyLookupCache, sourceCache)
 
     const routerFactories: RouterFactory[] = [
         new CynosureRouterFactory(buildSystem, redisFactory),
         new AdminMajorsRouterFactory(majorService, majorApplicationService, activeRepositories),
-        new AdminRepositoryRouterFactory(systemFilesAccess, buildSystem, repositoryAccessFactory, repositoryFactory, cynosureApiConnectorFactory, localGitFactory, buildLogService),
+        new AdminRepositoryRouterFactory(systemFilesAccess, buildSystem, repositoryAccessFactory, repositoryFactory, cynosureApiConnectorFactory, sourceCache, buildLogService),
         new AdminRouterFactory(activeRepositories, majorService, activeSystem)
     ]
 
@@ -202,6 +207,15 @@ createConfig(args.config, [new VaultValueSubstitutor(vaultService), new FileValu
             gerritConnection.start(buildSystem)
         }
     })
+    if (cbDev) {
+        logger.info("DEV MODE - Scanning all active directories to store dependency information")
+        activeRepositories.activeRepositories().then(repositories => {
+            logger.info(`DEV MODE - Repositories: ${repositories.join(",")}`)
+            repositories.forEach(r => {
+                scannerManager.registerDependencies(r)
+            })
+        })
+    }
 })
 
 

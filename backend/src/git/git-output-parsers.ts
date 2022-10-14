@@ -10,12 +10,12 @@ export namespace GitOutputParser {
             if (m) {
                 const [full, sha, ref, commitRef] = m
                 if (commitRef || !acc.get(ref)) {
-                    const parsedRef = Refs.tryCreate(ref)
+                    const parsedRef = Refs.tryCreateFromRemoteRef(ref)
                     if (parsedRef) {
                         const shaRef = Refs.ShaRef.create(sha)
-                        if (parsedRef.type === Refs.Type.BRANCH) {
+                        if (parsedRef instanceof Refs.BranchRef) {
                             acc.set(ref, new Refs.Branch(parsedRef, shaRef))
-                        } else if (parsedRef.type === Refs.Type.TAG) {
+                        } else if (parsedRef instanceof Refs.TagRef) {
                             acc.set(ref, new Refs.Tag(parsedRef, shaRef))
                         }
                     }

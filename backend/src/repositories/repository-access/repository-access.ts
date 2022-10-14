@@ -18,8 +18,9 @@ export interface RepositoryAccess {
     createTag(repository: RepositoryPath, sha: Refs.ShaRef, name: string, message?: string): Promise<Refs.Tag>
     createBranch(repository: RepositoryPath, fromSha: Refs.ShaRef, name: string): Promise<Refs.Branch>
     getUpdates(repository: RepositoryPath): Promise<Update[]>
+    getLabels(id: UpdateId): Promise<string[] | undefined>
     createUpdate(repository: RepositoryPath, target: Refs.BranchRef, labels: string[], ...content: Content.Content[]): Promise<UpdateId>
-    updateUpdate(repository: RepositoryPath, updateId: UpdateId, ...content: Content.Content[]): Promise<void>
+    updateUpdate(repository: RepositoryPath, updateId: UpdateId, ...content: Content.Content[]): Promise<boolean>
 }
 
 export namespace Content {

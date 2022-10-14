@@ -2,6 +2,7 @@ import { createLogger, loggerName } from "../../logging/logging-factory";
 import { RedisFactory } from "../../redis/redis-factory";
 import { RedisUtils } from '../../redis/redis-utils';
 import { Duration } from '../../task-queue/time';
+import { PromiseUtils } from "../../utils/promise-utils";
 import { JobExecutor } from '../job-executor/job-executor';
 import { TimeProvider } from "../time";
 import { Queue } from "./queue";
@@ -34,11 +35,11 @@ export class QueueImpl implements Queue.Service {
                     return acc
                 }, client.multi())
                 return RedisUtils.executeMulti(tx).then(result => {
-                    setTimeout(() => {
+                    PromiseUtils.waitPromise(Duration.NO_DURATION).then(() => { // Just to be scheduled after completion.
                         result.forEach((oldStatus, index) => {
                             this.listener.onQueueTransition(jobs[index], newStatus, <Queue.State>oldStatus)
                         })
-                    }, 0)
+                    })
                 })
             })
         } else {

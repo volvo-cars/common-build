@@ -1,58 +1,65 @@
+import { toString } from "lodash"
+import { SourceCache } from "../system/source-cache"
+
 export namespace Refs {
 
-    export enum Type {
-        TAG = "tag",
-        BRANCH = "branch",
-        SHA = "sha"
-    }
 
-    export abstract class Ref {
-        protected constructor(public readonly type: Type, public readonly name: string) { }
-        toString(): string {
-            return `${this.type}:${this.name}`
-        }
-        abstract originRef(): string
-        abstract equals(other: Ref): boolean
+    export interface Ref {
+        name: string
+        toString(): string
+        get originRef(): string
+        equals(other: Ref): boolean
 
     }
 
-    export class BranchRef extends Ref {
+    export interface EntityRef extends Ref {
+        get refSpec(): SourceCache.RefSpec
+        get remoteRef(): string
+    }
 
-        constructor(name: string) {
-            super(Type.BRANCH, name)
+    export class BranchRef implements EntityRef {
+
+        constructor(public readonly name: string) { }
+
+        static create(name: string): BranchRef {
+            return new BranchRef(name)
         }
-        static create(ref: string): BranchRef {
-            const parsedRef = create(ref)
-            if (parsedRef.type === Type.BRANCH) {
-                return parsedRef
-            } else {
-                throw new Error(`Illegal branch ref: ${ref}`)
-            }
+
+        get originRef(): string {
+            return `refs/remotes/origin/${this.name}`
         }
-        override originRef(): string {
-            return `origin/${this.name}`
+
+        get remoteRef(): string {
+            return `refs/heads/${this.name}`
         }
+
+
         equals(other: Ref): boolean {
             if (other instanceof BranchRef) {
                 return other.name === this.name
             }
             return false
         }
+
+        get refSpec(): SourceCache.RefSpec {
+            return new SourceCache.RefSpec(`+refs/heads/${this.name}:refs/remotes/origin/${this.name}`)
+        }
+
+        toString(): string {
+            return `branch-ref: ${this.name}`
+        }
     }
-    export class TagRef extends Ref {
-        constructor(name: string) {
-            super(Type.TAG, name)
+
+    export class TagRef implements EntityRef {
+        constructor(public readonly name: string) { }
+        static create(name: string): TagRef {
+            return new TagRef(name)
         }
-        static create(ref: string): TagRef {
-            const parsedRef = create(ref)
-            if (parsedRef.type === Type.TAG) {
-                return parsedRef
-            } else {
-                throw new Error(`Illegal tag ref: ${ref}`)
-            }
+        get originRef(): string {
+            return `refs/tags/${this.name}`
         }
-        override originRef(): string {
-            return this.name
+        get remoteRef(): string {
+            return `refs/tags/${this.name}`
         }
         equals(other: Ref): boolean {
             if (other instanceof TagRef) {
@@ -60,14 +67,44 @@ export namespace Refs {
             }
             return false
         }
+        get refSpec(): SourceCache.RefSpec {
+            return new SourceCache.RefSpec(`+refs/tags/${this.name}:refs/tags/${this.name}`)
+        }
 
-
+        toString(): string {
+            return `tag-ref: ${this.name}`
+        }
     }
-    export class ShaRef extends Ref {
-        static regExp = /^[0-9a-f]{40}$/i
-        private constructor(public readonly sha: string) {
-            super(Type.SHA, sha)
 
+    export class MetaConfigBranchRef extends BranchRef {
+        constructor() {
+            super("meta/config")
+        }
+
+        public static INSTANCE = new MetaConfigBranchRef()
+
+        static parse(ref: string): MetaConfigBranchRef | undefined {
+            return ref === "refs/meta/config" ? MetaConfigBranchRef.INSTANCE : undefined
+        }
+
+        override get remoteRef(): string {
+            return `refs/${this.name}`
+        }
+
+        override get refSpec(): SourceCache.RefSpec {
+            return new SourceCache.RefSpec(`+refs/${this.name}:refs/remotes/origin/${this.name}`)
+        }
+        toString(): string {
+            return `meta-config-branch-ref: meta/config`
+        }
+    }
+
+
+    export class ShaRef implements Ref {
+        static regExp = /^[0-9a-f]{40}$/i
+        public readonly name: string
+        private constructor(public readonly sha: string) {
+            this.name = sha
         }
         static create(sha: string): ShaRef {
             if (this.regExp.test(sha)) {
@@ -76,9 +113,10 @@ export namespace Refs {
                 throw new Error(`Bad sha ref: ${sha}`)
             }
         }
-        override originRef(): string {
+        get originRef(): string {
             return this.name
         }
+
         equals(other: Ref): boolean {
             if (other instanceof ShaRef) {
                 return other.name === this.name
@@ -86,78 +124,75 @@ export namespace Refs {
             return false
         }
 
-
+        toString(): string {
+            return `sha:${this.sha}`
+        }
     }
 
-    export class Branch {
+    export interface Entity {
+        readonly ref: EntityRef
+        readonly sha: ShaRef
+    }
+
+    export class Branch implements Entity {
         constructor(public readonly ref: BranchRef, public readonly sha: ShaRef) { }
-        static create(ref: string, sha: string): Branch {
-            const shaRef = create(sha)
-            if (shaRef.type === Type.SHA) {
-                return Branch.createWithSha(ref, <ShaRef>shaRef)
+
+        static create(name: string, sha: string): Branch {
+            const shaRef = ShaRef.create(sha)
+            if (shaRef instanceof ShaRef) {
+                return Branch.createWithSha(name, <ShaRef>shaRef)
             }
             throw new Error(`Bad branch sha-ref: ${sha}`)
         }
         withSha(sha: string): Branch {
             return new Branch(this.ref, ShaRef.create(sha))
         }
-        static createWithSha(ref: string, sha: ShaRef): Branch {
-            const branchRef = create(ref)
-            if (branchRef.type === Type.BRANCH) {
-                return new Branch(branchRef, sha)
-            }
-            throw new Error(`Bad branch-ref: ${ref}`)
+        static createWithSha(name: string, sha: ShaRef): Branch {
+            const branchRef = new BranchRef(name)
+            return new Branch(branchRef, sha)
         }
+        toString(): string {
+            return `Branch ${this.ref.name} -> ${this.sha.sha}`
+        }
+
     }
 
-    export class Tag {
+    export class Tag implements Entity {
         constructor(public readonly ref: TagRef, public readonly sha: ShaRef) { }
         static create(ref: string, sha: string): Tag {
-            const shaRef = create(sha)
-            if (shaRef.type === Type.SHA) {
-                return Tag.createWithSha(ref, <ShaRef>shaRef)
-            }
-            throw new Error(`Bad tag sha-ref: ${sha}`)
+            const shaRef = ShaRef.create(sha)
+            return Tag.createWithSha(ref, shaRef)
         }
-        static createWithSha(ref: string, sha: ShaRef): Branch {
-            const tagRef = create(ref)
-            if (tagRef.type === Type.TAG) {
-                return new Branch(tagRef, sha)
-            }
-            throw new Error(`Bad tag-ref: ${ref}`)
+        static createWithSha(name: string, sha: ShaRef): Branch {
+            const tagRef = new TagRef(name)
+            return new Branch(tagRef, sha)
+        }
+        toString(): string {
+            return `Tag ${this.ref.name} -> ${this.sha.sha}`
         }
     }
 
-    export const create = (ref: string): Ref => {
+    export const createFromRemoteRef = (ref: string): EntityRef => {
         const parts = ref.split('/')
-        if (parts.length >= 3) {
-            const [r1, r2] = parts
-            if (r1 === "refs") {
-                if (r2 === "tags") {
-                    return new TagRef(parts.splice(2).join("/"))
-                } else if (r2 === "remotes") {
-                    const nameParts = parts.splice(3)
-                    return new BranchRef(nameParts.join("/"))
-                } else if (r2 === "heads") {
-                    return new BranchRef(parts.splice(2).join("/"))
-                } else {
-                    return new BranchRef(parts.splice(1).join("/"))
-                }
-            }
-            throw new Error(`Unsupported ref [tags/heads/remotes]: ${ref}`)
-        } else if (parts.length === 1) {
-            if (ref.length === 40) {
-                try {
-                    return ShaRef.create(parts[0])
-                } catch (e) { }
+        const [r1, r2, r3] = parts
+        if (r1 === "refs") {
+            if (r2 === "tags") {
+                return new TagRef(parts.splice(2).join("/"))
+            } else if (r2 === "remotes") {
+                const nameParts = parts.splice(3)
+                return new BranchRef(nameParts.join("/"))
+            } else if (r2 === "heads") {
+                return new BranchRef(parts.splice(2).join("/"))
+            } else if (r2 === "meta" && r3 === "config") {
+                return MetaConfigBranchRef.INSTANCE
             }
         }
-        return new BranchRef(parts.join("/"))
+        throw new Error(`Could not decode ${ref} to EntityRef`)
     }
 
-    export const tryCreate = (ref: string): Ref | undefined => {
+    export const tryCreateFromRemoteRef = (ref: string): EntityRef | undefined => {
         try {
-            return create(ref)
+            return createFromRemoteRef(ref)
         } catch (e) {
             return undefined
         }

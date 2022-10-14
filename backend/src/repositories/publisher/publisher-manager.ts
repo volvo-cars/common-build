@@ -91,8 +91,8 @@ export class PublisherManagerImpl implements PublisherManager {
         }
     }
 
-    publications(source: RepositorySource, sha: Refs.ShaRef): Promise<DependencyRef.Ref[]> {
-        return this.systemFilesAccess.getPublicationConfig(source, sha).then(publishConfig => {
+    publications(source: RepositorySource, ref: Refs.Ref): Promise<DependencyRef.Ref[]> {
+        return this.systemFilesAccess.getPublicationConfig(source, ref).then(publishConfig => {
             if (publishConfig) {
                 const artifactsConfig = publishConfig.artifacts
                 const artifacts = artifactsConfig ? artifactsConfig.items.map((artifact, index) => {
@@ -116,10 +116,10 @@ export class PublisherManagerImpl implements PublisherManager {
                     return new DependencyRef.ImageRef(remote, image.name)
                 }) : []
                 const allPublications = [artifacts, images].flat()
-                logger.debug(`Found ${allPublications.length} publications for ${source} in ${sha}: ${artifacts.map(a => { return `${a.remote}/${a.path}` }).join(",")} ${images.map(a => { return `${a.remote}/${a.repository}` }).join(",")}`)
+                logger.debug(`Found ${allPublications.length} publications for ${source} in ${ref}: ${artifacts.map(a => { return `${a.remote}/${a.path}` }).join(",")} ${images.map(a => { return `${a.remote}/${a.repository}` }).join(",")}`)
                 return allPublications
             } else {
-                logger.debug(`No publications for ${source} in ${sha}`)
+                logger.debug(`No publications for ${source} in ${ref}`)
                 return Promise.resolve([])
             }
         })

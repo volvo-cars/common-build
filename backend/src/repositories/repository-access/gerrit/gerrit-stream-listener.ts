@@ -6,9 +6,12 @@ import { ServiceConfig } from '../../../domain-model/system-config/service-confi
 import { createLogger, loggerName } from "../../../logging/logging-factory"
 import { ShutdownManager } from '../../../shutdown-manager/shutdown-manager'
 import { BuildSystem, Update } from "../../../system/build-system"
+import { Duration } from '../../../task-queue/time'
+import { PromiseUtils } from '../../../utils/promise-utils'
 import { stringNewlineTokenizer } from "../../../utils/string-newline-tokenizer"
 import { ChangeCache } from './change-cache'
 import { Events } from './events'
+import { GerritUpdate } from './gerrit-update'
 
 const logger = createLogger(loggerName(__filename))
 
@@ -21,14 +24,17 @@ export class GerritStreamListener implements ShutdownManager.Service {
     public serviceName: string
     public shutdownPriority = 10;
     private active: boolean = true
+
+    private validRefs = [/^refs\/heads\//, /^refs\/tags\//, /^refs\/config\//]
+
     constructor(private readonly listenerConfig: GerritStreamListenerConfig, private readonly changeCache: ChangeCache, private readonly limitedRepositories: string[] | undefined) {
         this.serviceName = `GerritStreamListener - ${listenerConfig.config.id}`
     }
-    private delayStart(reciever: BuildSystem.UpdateReceiver, delaySec: number): void {
-        logger.debug(`Starting stream-listener ${this.listenerConfig.config.ssh} in ${delaySec} seconds...`)
-        setTimeout(() => {
+    private delayStart(reciever: BuildSystem.UpdateReceiver, delay: Duration): void {
+        logger.debug(`Starting stream-listener ${this.listenerConfig.config.ssh} in ${delay.seconds()} seconds...`)
+        PromiseUtils.waitPromise(delay).then(() => {
             this.start(reciever)
-        }, delaySec * 1000)
+        })
     }
     shutdown(): Promise<void> {
         this.active = false
@@ -50,7 +56,7 @@ export class GerritStreamListener implements ShutdownManager.Service {
 
             client.on('error', (e) => {
                 logger.error(`Could not connect to ${this.listenerConfig.config.ssh}: ${e}.`)
-                this.delayStart(receiver, 5)
+                this.delayStart(receiver, Duration.fromSeconds(5))
             })
             client.on('ready', () => {
                 logger.debug(`Connected stream listener to ${this.listenerConfig.config.id}: ${this.listenerConfig.config.ssh}`) // Is defined
@@ -70,14 +76,30 @@ export class GerritStreamListener implements ShutdownManager.Service {
                                         if (type === Events.TypeRefUpdated) {
                                             const event = <Events.RefUpdateEvent>json
                                             if (this.isProjectActive(event.refUpdate.project)) {
-                                                const source = new RepositorySource(
-                                                    this.listenerConfig.config.id,
-                                                    event.refUpdate.project
-                                                )
-                                                if (event.refUpdate.newRev === "0000000000000000000000000000000000000000") {
-                                                    receiver.onDelete(source, Refs.create(event.refUpdate.refName))
-                                                } else {
-                                                    receiver.onPush(source, Refs.create(event.refUpdate.refName), Refs.ShaRef.create(event.refUpdate.newRev))
+                                                if (this.validRefs.find(regExp => {
+                                                    return regExp.test(event.refUpdate.refName)
+                                                })) {
+                                                    const source = new RepositorySource(
+                                                        this.listenerConfig.config.id,
+                                                        event.refUpdate.project
+                                                    )
+                                                    const ref = Refs.tryCreateFromRemoteRef(event.refUpdate.refName)
+                                                    if (ref) {
+                                                        if (event.refUpdate.newRev === "0000000000000000000000000000000000000000") {
+                                                            receiver.onDelete(source, ref)
+                                                        } else {
+                                                            const newSha = Refs.ShaRef.create(event.refUpdate.newRev)
+                                                            if (ref instanceof Refs.TagRef) {
+                                                                receiver.onPush(source, new Refs.Tag(ref, newSha))
+                                                            } else if (ref instanceof Refs.BranchRef) {
+                                                                receiver.onPush(source, new Refs.Branch(ref, newSha))
+                                                            } else {
+                                                                logger.error(`Unknown ref decoded: ${ref.constructor.name} in ${source}`)
+                                                            }
+                                                        }
+                                                    } else {
+                                                        logger.debug(`Ref not decoded: ${event.refUpdate.refName} ${source}`)
+                                                    }
                                                 }
                                             }
                                         } else if (type === Events.TypePatchSetCreated) {
@@ -88,15 +110,15 @@ export class GerritStreamListener implements ShutdownManager.Service {
                                                         this.listenerConfig.config.id,
                                                         event.project
                                                     )
-                                                    const update = new Update(
+                                                    const update = new GerritUpdate(
                                                         source,
                                                         event.change.id,
                                                         Refs.ShaRef.create(event.patchSet.revision),
                                                         event.change.branch,
                                                         event.change.subject,
                                                         event.change.hashtags || [],
-                                                        event.change.number,
-                                                        event.change.url
+                                                        event.change.url,
+                                                        event.change.number
                                                     )
                                                     const relatedChangesCount = await this.changeCache.getRelatedChanges(source, update.id, update.sha)
                                                     const dataJson = JSON.stringify(event, null, 2)
@@ -121,7 +143,7 @@ export class GerritStreamListener implements ShutdownManager.Service {
                             })
                     } else {
                         logger.error(`Could not execute command on ssh-channel. Stream-listener ${this.listenerConfig.config.id}: ${err}`)
-                        this.delayStart(receiver, 5)
+                        this.delayStart(receiver, Duration.fromSeconds(5))
                     }
                 })
             }).connect(

@@ -7,16 +7,16 @@ import { Version } from '../../../domain-model/version';
 import { createLogger, loggerName } from '../../../logging/logging-factory';
 import { splitAndFilter } from '../../../utils/string-util';
 import { SystemFilesAccess } from '../../system-files-access';
-import { DependencyProvider } from '../dependency-provider';
+import { DependencyLookup } from '../dependency-lookup';
 import { LabelCriteria } from '../label-criteria';
-import { DependencyUpdate, ScanResult } from "../scanner";
-import { Dependency, ScannerProvider } from "../scanner-provider";
+import { Scanner } from '../scanner';
 const logger = createLogger(loggerName(__filename))
 
-export class DependenciesYamlScannerProvider implements ScannerProvider {
+export class DependenciesYamlScannerProvider implements Scanner.Provider {
     constructor(private systemFilesAccess: SystemFilesAccess) { }
 
-    dependencies(source: RepositorySource, ref: Refs.Ref): Promise<Dependency[]> {
+
+    getDependencies(source: RepositorySource, ref: Refs.ShaRef | Refs.TagRef): Promise<Scanner.Dependency[]> {
         return this.systemFilesAccess.getDependenciesConfig(source, ref).then(async config => {
             if (config) {
                 const artifactsConfig = config.artifacts
@@ -26,7 +26,7 @@ export class DependenciesYamlScannerProvider implements ScannerProvider {
                     const version = Version.parse(artifact.revision)
                     if (remote && repository && version) {
                         const dependencyRef = new DependencyRef.ArtifactRef(remote, repository, artifact.path)
-                        return [new Dependency(dependencyRef, version)]
+                        return [new Scanner.Dependency(dependencyRef, version)]
 
                     } else {
                         return []
@@ -38,7 +38,7 @@ export class DependenciesYamlScannerProvider implements ScannerProvider {
                     const version = Version.parse(image.revision)
                     if (remote && version) {
                         const dependencyRef = new DependencyRef.ImageRef(remote, image.repository)
-                        return [new Dependency(dependencyRef, version)]
+                        return [new Scanner.Dependency(dependencyRef, version)]
 
                     } else {
                         return []
@@ -54,7 +54,7 @@ export class DependenciesYamlScannerProvider implements ScannerProvider {
         })
     }
 
-    async scan(source: RepositorySource, ref: Refs.Ref, dependencyProvider: DependencyProvider, labelCriteria: LabelCriteria.Criteria): Promise<ScanResult> {
+    async scan(source: RepositorySource, ref: Refs.Ref, dependencyProvider: DependencyLookup.Provider, labelCriteria: LabelCriteria.Criteria): Promise<Scanner.ScanResult> {
         return this.systemFilesAccess.getDependenciesConfig(source, ref).then(async config => {
             if (config) {
                 const allLabels: string[][] = []
@@ -91,16 +91,21 @@ export class DependenciesYamlScannerProvider implements ScannerProvider {
                                     if (remote && repository) {
                                         const dependencyRef = new DependencyRef.ArtifactRef(remote, repository, artifact.path)
                                         allDependencies.push(dependencyRef)
-                                        dependencyProvider.getVersion(dependencyRef).then(newVersion => {
-                                            if (newVersion) {
-                                                const currentVersion = Version.parse(artifact.revision || "")
-                                                if (!currentVersion || newVersion.compare(currentVersion) !== 0) {
-                                                    artifact.revision = newVersion.asString()
-                                                    changeCount++
+                                        const currentVersion = Version.parse(artifact.revision || "")
+                                        if (currentVersion) {
+                                            dependencyProvider.getVersion(dependencyRef, currentVersion).then(newVersion => {
+                                                if (newVersion) {
+                                                    if (!currentVersion || newVersion.compare(currentVersion) !== 0) {
+                                                        artifact.revision = newVersion.asString()
+                                                        changeCount++
+                                                    }
                                                 }
-                                            }
+                                            }).finally(() => { resolve() })
+                                        } else {
                                             resolve()
-                                        }).catch(e => { resolve(e) })
+                                        }
+                                    } else {
+                                        resolve()
                                     }
                                 }))
                             }
@@ -116,16 +121,20 @@ export class DependenciesYamlScannerProvider implements ScannerProvider {
                                     if (remote) {
                                         const dependencyRef = new DependencyRef.ImageRef(remote, image.repository)
                                         allDependencies.push(dependencyRef)
-                                        dependencyProvider.getVersion(dependencyRef).then(newVersion => {
-                                            if (newVersion) {
-                                                const currentVersion = Version.parse(image.revision || "")
-                                                if (!currentVersion || newVersion.compare(currentVersion) !== 0) {
+                                        const currentVersion = Version.parse(image.revision || "")
+                                        if (currentVersion) {
+                                            dependencyProvider.getVersion(dependencyRef, currentVersion).then(newVersion => {
+                                                if (newVersion && newVersion.compare(currentVersion) !== 0) {
                                                     image.revision = newVersion.asString()
                                                     changeCount++
                                                 }
-                                            }
+                                                resolve()
+                                            }).catch(e => { resolve(e) })
+                                        } else {
                                             resolve()
-                                        }).catch(e => { resolve(e) })
+                                        }
+                                    } else {
+                                        resolve()
                                     }
                                 }))
                             }
@@ -136,11 +145,11 @@ export class DependenciesYamlScannerProvider implements ScannerProvider {
                     await Promise.all(replaces)
                     if (changeCount) {
                         return Promise.resolve([
-                            <DependencyUpdate>{
-                                label: relevantLabel,
-                                path: DependenciesConfig.FILE_PATH,
-                                content: this.systemFilesAccess.serialize(clonedConfig)
-                            }
+                            new Scanner.DependencyUpdate(
+                                relevantLabel,
+                                DependenciesConfig.FILE_PATH,
+                                this.systemFilesAccess.serialize(clonedConfig)
+                            )
                         ])
                     } else {
                         return Promise.resolve([])
@@ -148,15 +157,9 @@ export class DependenciesYamlScannerProvider implements ScannerProvider {
 
                 })))
                 const uniqueRefs = DependencyRef.uniqueRefs(allDependencies)
-                return Promise.resolve({
-                    allDependencies: uniqueRefs,
-                    updates: allUpdates
-                })
+                return Promise.resolve(new Scanner.ScanResult(uniqueRefs, allUpdates))
             } else {
-                return Promise.resolve(<ScanResult>{
-                    allDependencies: [],
-                    updates: []
-                })
+                return Promise.resolve(new Scanner.ScanResult([], []))
             }
         })
     }

@@ -1,9 +1,9 @@
 import { afterAll, beforeEach, describe, it } from '@jest/globals'
-import _ from 'lodash'
 import { Refs } from '../../../../src/domain-model/refs'
-import { RepositoryPath, RepositorySource } from '../../../../src/domain-model/repository-model/repository-source'
+import { RepositorySource } from '../../../../src/domain-model/repository-model/repository-source'
 import { createForTest } from '../../../../src/redis/redis-factory'
-import { RawModelRepository, RepositoryStateProvider } from '../../../../src/repositories/repository/raw-model-repository'
+import { RawModelRepository } from '../../../../src/repositories/repository/raw-model-repository'
+import { MockSourceCache } from '../../../helpers/mock-source-cache'
 import { TestUtils } from '../../../helpers/test-utils'
 describe("Testing raw-model repository", () => {
     let redisFactory = createForTest()
@@ -22,19 +22,20 @@ describe("Testing raw-model repository", () => {
             "dummy"
         )
         const branches = [
-            Refs.Branch.createWithSha("refs/heads/master", TestUtils.sha("0000"))
+            Refs.Branch.createWithSha("master", TestUtils.sha("0000"))
         ]
         const tags = [
-            Refs.Tag.createWithSha("refs/tags/v1.0.0", TestUtils.sha("100")),
-            Refs.Tag.createWithSha("refs/tags/v1.1.0", TestUtils.sha("110")),
-            Refs.Tag.createWithSha("refs/tags/v1.1.1", TestUtils.sha("111")),
-            Refs.Tag.createWithSha("refs/tags/v1.2.0", TestUtils.sha("120")),
-            Refs.Tag.createWithSha("refs/tags/major-1", TestUtils.sha("abc"))
+            Refs.Tag.createWithSha("v1.0.0", TestUtils.sha("100")),
+            Refs.Tag.createWithSha("v1.1.0", TestUtils.sha("110")),
+            Refs.Tag.createWithSha("v1.1.1", TestUtils.sha("111")),
+            Refs.Tag.createWithSha("v1.2.0", TestUtils.sha("120")),
+            Refs.Tag.createWithSha("major-1", TestUtils.sha("abc"))
         ]
-        const stateProvider = new MockRepositoryStateProvider(branches, tags)
-        const rawRepository = new RawModelRepository(redisFactory)
+        const sourceCache = new MockSourceCache()
+        sourceCache.setNewEntities(source, branches, tags)
+        const rawRepository = new RawModelRepository(redisFactory, sourceCache)
 
-        const model = await rawRepository.getModel(source, stateProvider)
+        const model = await rawRepository.getModel(source)
         expect(model.main.main.name).toBe("master")
         expect(model.main.main.sha).toBe(TestUtils.sha("0000").sha)
         expect(model.main.minors.length).toBe(3)
@@ -67,22 +68,23 @@ describe("Testing raw-model repository", () => {
             "dummy"
         )
         const branches = [
-            Refs.Branch.createWithSha("refs/heads/master", TestUtils.sha("0")),
-            Refs.Branch.createWithSha("refs/heads/patch-1", TestUtils.sha("b1")),
+            Refs.Branch.createWithSha("master", TestUtils.sha("0")),
+            Refs.Branch.createWithSha("patch-1", TestUtils.sha("b1")),
         ]
         const tags = [
-            Refs.Tag.createWithSha("refs/tags/v0.0.0", TestUtils.sha("000")),
-            Refs.Tag.createWithSha("refs/tags/v0.1.0", TestUtils.sha("010")),
-            Refs.Tag.createWithSha("refs/tags/major-1", TestUtils.sha("a1")),
-            Refs.Tag.createWithSha("refs/tags/v1.0.0", TestUtils.sha("100")),
-            Refs.Tag.createWithSha("refs/tags/v1.1.0", TestUtils.sha("110")),
-            Refs.Tag.createWithSha("refs/tags/major-2", TestUtils.sha("a2")),
+            Refs.Tag.createWithSha("v0.0.0", TestUtils.sha("000")),
+            Refs.Tag.createWithSha("v0.1.0", TestUtils.sha("010")),
+            Refs.Tag.createWithSha("major-1", TestUtils.sha("a1")),
+            Refs.Tag.createWithSha("v1.0.0", TestUtils.sha("100")),
+            Refs.Tag.createWithSha("v1.1.0", TestUtils.sha("110")),
+            Refs.Tag.createWithSha("major-2", TestUtils.sha("a2")),
         ]
 
-        const stateProvider = new MockRepositoryStateProvider(branches, tags)
-        const rawRepository = new RawModelRepository(redisFactory)
+        const sourceCache = new MockSourceCache()
+        sourceCache.setNewEntities(source, branches, tags)
+        const rawRepository = new RawModelRepository(redisFactory, sourceCache)
 
-        const model = await rawRepository.getModel(source, stateProvider)
+        const model = await rawRepository.getModel(source)
 
         expect(model.main.major).toBe(2)
         expect(model.majors.length).toBe(2)
@@ -96,10 +98,3 @@ describe("Testing raw-model repository", () => {
     })
 })
 
-class MockRepositoryStateProvider implements RepositoryStateProvider {
-    private access: boolean = true
-    constructor(private branches: Refs.Branch[], private tags: Refs.Tag[]) { }
-    getState(path: RepositoryPath): Promise<(Refs.Branch | Refs.Tag)[]> {
-        return Promise.resolve(_.concat(this.branches, this.tags))
-    }
-}

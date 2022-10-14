@@ -1,5 +1,4 @@
-import { describe, expect, it, beforeEach, afterAll } from '@jest/globals'
-import { createForTest } from "../../../src/redis/redis-factory"
+import { describe, expect, it } from '@jest/globals'
 import { createExecutionSerializer, ExecutionSerializer } from "../../../src/system/execution-serializer"
 
 describe("Test Execution-Serializer", () => {
@@ -18,23 +17,24 @@ describe("Test Execution-Serializer", () => {
         let a5 = serializer.execute(keyA, () => createTestPromise(50))
 
         let [r1, r2, r3, r4, r5] = await Promise.all([a1, a2, a3, a4, a5])
-
-        expect(r1).toBe(1)
-        expect(r2).toBe(2)
-        expect(r3).toBe(3)
-        expect(r4).toBe(4)
-        expect(r5).toBe(5)
-
+        expect(r1).toEqual([1, 1])
+        expect(r2).toEqual([2, 2])
+        expect(r3).toEqual([3, 3])
+        expect(r4).toEqual([4, 4])
+        expect(r5).toEqual([5, 5])
     })
 })
 
 let completeCount = 0
+let creationCount = 0
 
-const createTestPromise = (waitTime: number): Promise<number> => {
-    return new Promise<number>((resolve, reject) => {
+const createTestPromise = (waitTime: number): Promise<[number, number]> => {
+    creationCount++
+    const created = creationCount
+    return new Promise<[number, number]>((resolve, reject) => {
         setTimeout(() => {
             completeCount++
-            resolve(completeCount)
+            resolve([created, completeCount])
         }, waitTime)
     })
 }

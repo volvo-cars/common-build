@@ -19,14 +19,15 @@ import { RepositoryAccessFactory } from "../repositories/repository-access/repos
 import { NormalizedModel, NormalizedModelUtil } from "../repositories/repository/normalized-model"
 import { VersionType } from "../repositories/repository/repository"
 import { RepositoryFactory } from "../repositories/repository/repository-factory"
+import { DependencyLookup } from '../repositories/scanner/dependency-lookup'
 import { ScannerManager } from "../repositories/scanner/scanner-manager"
 import { SystemFilesAccess, SystemFilesAccessImpl } from "../repositories/system-files-access"
 import { BuildSystem, Update } from './build-system'
-import { createExecutionSerializer, ExecutionSerializer } from "./execution-serializer"
 import { JobExecutor } from './job-executor/job-executor'
 import { ActiveRepositories } from "./queue/active-repositories"
 import { Queue } from './queue/queue'
 import { QueueImpl } from './queue/queue-impl'
+import { SourceCache } from './source-cache'
 import { TimeProvider } from "./time"
 
 
@@ -34,7 +35,6 @@ const logger = createLogger(loggerName(__filename))
 
 export class BuildSystemImpl implements BuildSystem.Service, Queue.Listener, JobExecutor.Listener, BuildSystem.UpdateReceiver {
     private queue: Queue.Service
-    private executionSerializer: ExecutionSerializer
     private systemFilesAccess: SystemFilesAccess
 
     constructor(
@@ -45,17 +45,21 @@ export class BuildSystemImpl implements BuildSystem.Service, Queue.Listener, Job
         private repositoryModelFactory: RepositoryFactory,
         private activeRepositories: ActiveRepositories,
         private publisherManager: PublisherManager,
-        private scannerManager: ScannerManager,
-        private localGitFactory: LocalGitFactory,
+        private scannerManager: ScannerManager.Service,
         private activeSystem: ActiveSystem.System,
         private buildLogService: BuildLog.Service,
-        config: SystemConfig.Engine
+        private dependencyLookupCache: DependencyLookup.Cache,
+        private sourceCache: SourceCache.Service,
     ) {
         this.queue = new QueueImpl(this.redisFactory, this.time, this)
         this.systemFilesAccess = new SystemFilesAccessImpl(repositoryAcccessFactory)
-        this.executionSerializer = createExecutionSerializer()
         jobExecutor.setListener(this)
         this.startJobsFromQueue()
+    }
+
+    onJobLog(job: JobExecutor.Key, message: string, level: JobExecutor.LogLevel): void {
+        const logLevel = level === "warning" ? BuildLogEvents.Level.WARNING : BuildLogEvents.Level.INFO
+        this.buildLogService.add(message, logLevel, job.source, job.jobRef.canonicalId)
     }
 
 
@@ -100,21 +104,21 @@ export class BuildSystemImpl implements BuildSystem.Service, Queue.Listener, Job
                         } else {
                             this.buildLogService.add(`No rebase necessary. Fast-forward possible.`, BuildLogEvents.Level.INFO, source, ref.canonicalId)
                             logger.debug(`Fast-forward possible for ${ref} in ${source}. Continue build start.`)
-                            const dependencyTree = await this.scannerManager.allDependencies(source, ref.sha)
-                            const dependencyProblems = dependencyTree.getProblems()
+                            const dependencyGraph = await this.scannerManager.getDependencyGraph(source, ref.sha)
+                            const dependencyProblems = dependencyGraph.getProblems()
 
                             const dependencyTreeLog = [`***************** Dependency tree for ${source}/${ref}`]
-                            dependencyTree.traverse((ref: DependencyRef.Ref, version: Version, depth: number) => {
+                            dependencyGraph.traverse((ref: DependencyRef.Ref, version: Version, depth: number) => {
                                 dependencyTreeLog.push(`${_.repeat(" ", depth * 3)} ${ref.toString()}: ${version.asString()}`)
                             })
                             dependencyTreeLog.push(`***************** Problem count: ${dependencyProblems.length}`)
                             if (dependencyProblems.length) {
-                                dependencyTreeLog.push(`Dependendency problems with ${source}/${ref}: ${dependencyProblems.map(p => { return p.asString() }).join(", ")}. Signalling dependency issue to queue.`)
+                                dependencyTreeLog.push(`Dependendency problems with ${source}/${ref}: ${dependencyProblems.map(p => { return p.message }).join(", ")}. Signalling dependency issue to queue.`)
                             }
                             console.log(dependencyTreeLog.join("\n"))
                             if (dependencyProblems.length) {
                                 this.updateQueue(job, Queue.State.DEPENDENCY)
-                                this.buildLogService.add(`Build was aborted due to dependency inbalances: \n ${dependencyProblems.map(p => { return `* ${p.asString()}` }).join("\n")}`, BuildLogEvents.Level.WARNING, source, ref.canonicalId)
+                                this.buildLogService.add(`Build was aborted due to dependency inbalances: \n ${dependencyProblems.map(p => { return `* ${p.message}` }).join("\n")}`, BuildLogEvents.Level.WARNING, source, ref.canonicalId)
                             } else {
                                 this.jobExecutor.startJob(job)
                             }
@@ -138,25 +142,35 @@ export class BuildSystemImpl implements BuildSystem.Service, Queue.Listener, Job
                         const repositoryAccess = this.repositoryAcccessFactory.createAccess(job.source.id)
                         await repositoryAccess.setValidBuild(job.source.id, ref.updateId, ref.sha)
                         const action = repositoryConfig.buildAutomation.default
-                        logger.debug(`Job successful action: [${action}] ${job}`)
-                        if (action === RepositoryConfig.Action.Merge || action === RepositoryConfig.Action.Release) {
-                            repositoryAccess.merge(job.source.path, ref.updateId)
-                                .then(async updatedBranch => {
-                                    logger.info(`Merged ${job}`)
-                                    const branchJobRef = new JobRef.BranchRef(updatedBranch.ref, updatedBranch.sha)
-                                    this.buildLogService.add(`Merged to target branch \`${updatedBranch.ref.name}\`. Continued [log](${branchJobRef.canonicalId})`, BuildLogEvents.Level.INFO, job.source, job.jobRef.canonicalId)
-                                    this.buildLogService.add(`Merged update \`${ref.updateId}\`. Previous [log](${ref.canonicalId})`, BuildLogEvents.Level.INFO, job.source, branchJobRef.canonicalId)
-                                    if (action === RepositoryConfig.Action.Release) {
-                                        this.release(job.source, updatedBranch, VersionType.MINOR).then(version => { }).catch(error => {
-                                            logger.error(`Could not release ${job}:${error}`)
-                                            this.buildLogService.add(`Could not release: ${error}`, BuildLogEvents.Level.ERROR, job.source, job.jobRef.canonicalId)
-                                        })
-                                    }
-                                }).catch(error => {
-                                    logger.error(`Could not merge ${job}:${error}`)
-                                    this.buildLogService.add(`Could not merge: ${error}`, BuildLogEvents.Level.ERROR, job.source, job.jobRef.canonicalId)
-                                })
-                        }
+                        return this.repositoryAcccessFactory.createAccess(job.source.id).getLabels(ref.updateId).then(updateLabels => {
+                            const validUpdateLabels = updateLabels || []
+                            const labelActions = repositoryConfig.buildAutomation.labels
+                            const matchingLabelAction = labelActions.find(la => { return _.includes(validUpdateLabels, la.id) })
+                            const action = matchingLabelAction ? matchingLabelAction.action : repositoryConfig.buildAutomation.default
+                            logger.debug(`Job successful action: ${action} for ${matchingLabelAction?.id || "default"} ${job} in update-labels:${validUpdateLabels.join(",")}`)
+                            if (action === RepositoryConfig.Action.Merge || action === RepositoryConfig.Action.Release) {
+                                repositoryAccess.merge(job.source.path, ref.updateId)
+                                    .then(async updatedBranch => {
+                                        const branchJobRef = new JobRef.BranchRef(updatedBranch.ref, updatedBranch.sha)
+                                        this.buildLogService.add(`Merged to target branch \`${updatedBranch.ref.name}\` Post-process action \`${action}\`. Continued [log](${branchJobRef.canonicalId})`, BuildLogEvents.Level.INFO, job.source, job.jobRef.canonicalId)
+                                        this.buildLogService.add(`Merged update \`${ref.updateId}\`. Previous [log](${ref.canonicalId})`, BuildLogEvents.Level.INFO, job.source, branchJobRef.canonicalId)
+                                        if (action === RepositoryConfig.Action.Release) {
+                                            this.release(job.source, updatedBranch, VersionType.MINOR).then(version => { }).catch(error => {
+                                                logger.error(`Could not release ${job}:${error}`)
+                                                this.buildLogService.add(`Could not release: ${error}`, BuildLogEvents.Level.ERROR, job.source, job.jobRef.canonicalId)
+                                            })
+                                        }
+                                    }).catch(error => {
+                                        logger.error(`Could not merge ${job}:${error}`)
+                                        this.buildLogService.add(`Could not merge: ${error}`, BuildLogEvents.Level.ERROR, job.source, job.jobRef.canonicalId)
+                                    })
+                            } else {
+                                this.buildLogService.add(`Post processing action \`${action}\` resolved. Change left un-merged.`, BuildLogEvents.Level.INFO, job.source, job.jobRef.canonicalId)
+                            }
+                        }).catch(e => {
+                            this.buildLogService.add(`Coult not post-proces change: ${e}`, BuildLogEvents.Level.INFO, job.source, job.jobRef.canonicalId)
+                        })
+
                     } else {
                         logger.warn(`Missing repository config for ${job.source}. No action taken.`)
                     }
@@ -170,7 +184,6 @@ export class BuildSystemImpl implements BuildSystem.Service, Queue.Listener, Job
             this.startJobsFromQueue()
         } else if (Queue.isStateTerminal(state)) {
             if (state === Queue.State.ABORTED) {
-                console.log(`\n\n SENDING ABORT TO JOB EXECUTOR for ${job}\n\n`)
                 this.jobExecutor.abortJob(job)
             }
             this.startJobsFromQueue()
@@ -179,10 +192,8 @@ export class BuildSystemImpl implements BuildSystem.Service, Queue.Listener, Job
 
     async release(source: RepositorySource, branch: Refs.Branch, versionType: VersionType): Promise<Version> {
         const branchJobRef = new JobRef.BranchRef(branch.ref, branch.sha)
-        //Clear
-        return Promise.all([this.localGitFactory.invalidate(source), this.repositoryModelFactory.get(source).invalidate()]).then(async () => {
-            const repositoryModel = this.repositoryModelFactory.get(source)
-            const nextVersion = (await repositoryModel.modelReader()).nextVersion(branch.ref, versionType)
+        return this.repositoryModelFactory.get(source).modelReader().then(modelReader => {
+            const nextVersion = modelReader.nextVersion(branch.ref, versionType)
 
             return this.publisherManager.publications(source, branch.sha).then(publishedRefs => {
                 if (publishedRefs.length) {
@@ -210,7 +221,6 @@ export class BuildSystemImpl implements BuildSystem.Service, Queue.Listener, Job
         })
     }
 
-
     private startJobsFromQueue(): Promise<void> {
         return this.queue.start(10).then(startedJobs => {
             if (startedJobs.length) {
@@ -224,97 +234,114 @@ export class BuildSystemImpl implements BuildSystem.Service, Queue.Listener, Job
         return this.queue.getState(job)
     }
 
-
-
-    private createSourceExecutionKey(source: RepositorySource): string {
-        return `${source.id}/${source.path}`
-    }
-
-    private getBuildConfigIfActive(source: RepositorySource, sha: Refs.ShaRef, isActiveOp?: () => Promise<void>): Promise<BuildConfig.Config | Error | undefined> {
-        const cmd = async () => {
-            return this.activeSystem.isActive(source).then(async isActive => {
-                if (isActive) {
-                    if (isActiveOp) {
-                        await isActiveOp()
-                    }
-                    try {
-                        let buildYml = await this.systemFilesAccess.getBuildConfig(source, sha, true)
-                        if (buildYml) {
-                            return Promise.resolve(buildYml)
-                        } else {
-                            logger.debug(`No ${BuildConfig.FILE_PATH} for ${source}:${sha}. No processing.`)
-                            return Promise.resolve(undefined)
-                        }
-                    } catch (e) {
-                        return Promise.resolve(<Error>e)
-                    }
-                } else {
-                    return Promise.resolve(undefined)
-                }
-            })
-        }
-
-        return this.executionSerializer.execute(this.createSourceExecutionKey(source), cmd)
-    }
-
-    async onUpdate(update: Update, message: string, error?: "error"): Promise<void> {
-        return this.getBuildConfigIfActive(update.source, update.sha, () => {
-            return this.localGitFactory.execute(update.source, LocalGitCommands.fetchUpdate(update), LocalGitLoadMode.CACHED).then()
-        }).then(async result => {
-            if (result) {
-                const job = new JobExecutor.Key(update.source, new JobRef.UpdateRef(update.id, update.target, update.sha))
-                const infoUrl = this.buildLogService.getLogUrl(job.source, job.jobRef.canonicalId)
-                this.jobExecutor.setInfoUrl(job, infoUrl)
-                if (result instanceof BuildConfig.Config) {
-                    if (error) {
-                        return this.buildLogService.add(message, BuildLogEvents.Level.WARNING, job.source, job.jobRef.canonicalId)
-                    } else {
-                        this.buildLogService.add(message, BuildLogEvents.Level.INFO, job.source, job.jobRef.canonicalId)
-                        this.activeRepositories.addActiveRepositories(update.source)
-                        return this.queue.push(job).then(_ => { return })
-                    }
-                } else if (result instanceof Error) {
-                    this.buildLogService.add(`Parse error on \`${BuildConfig.FILE_PATH}\`: ${result}`, BuildLogEvents.Level.ERROR, job.source, job.jobRef.canonicalId)
-                    return Promise.resolve()
-                }
-            } else {
-                logger.debug(`OnUpdate skipped. ${update.source} not active in ${this.activeSystem.systemId} `)
-                return Promise.resolve()
-            }
-        })
-    }
-
-    async onPush(source: RepositorySource, ref: Refs.Ref, newSha: Refs.ShaRef): Promise<void> {
-        //We need to run this here because updates to refs/meta/config
-        await Promise.all([this.repositoryModelFactory.get(source).invalidate(), this.localGitFactory.invalidate(source)])
+    private getBuildConfigIfActive(source: RepositorySource, sha: Refs.ShaRef): Promise<BuildConfig.Config | false | Error> {
         return this.activeSystem.isActive(source).then(async isActive => {
             if (isActive) {
-                const normalizedRef = NormalizedModelUtil.normalize(ref)
-                if (normalizedRef) {
-                    if (normalizedRef.type === NormalizedModel.Type.MAIN_BRANCH) {
-                        const hasBuildYml = (await this.systemFilesAccess.getBuildConfig(source, newSha)) ? true : false
-                        if (hasBuildYml) {
-                            this.activeRepositories.addActiveRepositories(source)
-                        } else {
-                            this.activeRepositories.removeActiveRepositories(source)
-                        }
-                    } else if (normalizedRef.type === NormalizedModel.Type.RELEASE_TAG) {
-                        logger.info(`Reveived release: ${source}/${ref}. Triggering dependency scan for known dependent repos.`)
-                        const publications = await this.publisherManager.publications(source, newSha)
-                        // Launched in parallel
-                        this.scannerManager.processForDependencies(...[[new DependencyRef.GitRef(source)], publications].flat())
+                try {
+                    let buildYml = await this.systemFilesAccess.getBuildConfig(source, sha, true)
+                    if (buildYml) {
+                        return Promise.resolve(buildYml)
+                    } else {
+                        logger.debug(`No ${BuildConfig.FILE_PATH} for ${source}:${sha}. No processing.`)
+                        return Promise.resolve(false)
                     }
+                } catch (e) {
+                    return Promise.resolve(<Error>e)
                 }
-                return Promise.resolve()
             } else {
-                logger.debug(`OnPush skipped. ${source} not active in ${this.activeSystem.systemId} `)
+                return Promise.resolve(false)
             }
         })
     }
 
-    onDelete(source: RepositorySource, ref: Refs.Ref): Promise<void> {
-        const modelAction = NormalizedModelUtil.normalize(ref) ? this.repositoryModelFactory.get(source).invalidate() : Promise.resolve()
-        return Promise.all([this.localGitFactory.invalidate(source), modelAction]).then(() => { })
+
+
+    async onUpdate(update: Update, message: string, error?: "error"): Promise<void> {
+        console.log(`Received update: ${update}`)
+
+        return this.sourceCache.ensureRef(update.source, update.sha, update.refSpec).then(() => {
+            return this.getBuildConfigIfActive(update.source, update.sha).then(buildConfig => {
+                if (buildConfig) {
+                    const job = new JobExecutor.Key(update.source, new JobRef.UpdateRef(update.id, update.target, update.sha))
+                    const infoUrl = this.buildLogService.getLogUrl(job.source, job.jobRef.canonicalId)
+                    this.jobExecutor.setInfoUrl(job, infoUrl)
+                    if (buildConfig instanceof BuildConfig.Config) {
+                        if (error) {
+                            this.buildLogService.add(message, BuildLogEvents.Level.WARNING, job.source, job.jobRef.canonicalId)
+                            return Promise.resolve()
+                        } else {
+                            this.buildLogService.add(message, BuildLogEvents.Level.INFO, job.source, job.jobRef.canonicalId)
+                            this.activeRepositories.addActiveRepositories(update.source)
+                            return this.queue.push(job).then(_ => { return })
+                        }
+                    } else {
+                        const buildConfigError = <Error>buildConfig
+                        this.buildLogService.add(`Parse error on \`${BuildConfig.FILE_PATH}\`: ${buildConfigError}`, BuildLogEvents.Level.ERROR, job.source, job.jobRef.canonicalId)
+                        return Promise.resolve()
+                    }
+                } else {
+                    logger.debug(`Skip processing update: ${update}. Repository not active in ${this.activeSystem.systemId}`)
+                    return Promise.resolve()
+                }
+            })
+        })
+    }
+
+    async onPush(source: RepositorySource, entity: Refs.Entity): Promise<void> {
+
+        console.log(`Received push: ${source} ${entity}`)
+
+        const sourceCacheOps = entity.ref instanceof Refs.BranchRef ? this.sourceCache.ensureEntity(source, entity, entity.ref.refSpec) : this.sourceCache.ensureRef(source, entity.ref, entity.ref.refSpec)
+        sourceCacheOps.then(() => {
+            const ref = entity.ref
+            const sha = entity.sha
+            return this.getBuildConfigIfActive(source, sha).then(buildConfig => {
+                if (buildConfig) {
+                    if (buildConfig instanceof BuildConfig.Config) {
+                        const normalizedRef = NormalizedModelUtil.normalize(ref)
+                        if (normalizedRef) {
+                            return this.scannerManager.registerDependencies(source).then(async () => {
+                                if (normalizedRef instanceof NormalizedModel.MainBranchRef) {
+                                    const hasBuildYml = (await this.systemFilesAccess.getBuildConfig(source, sha)) ? true : false
+                                    if (hasBuildYml) {
+                                        this.activeRepositories.addActiveRepositories(source)
+                                    } else {
+                                        this.activeRepositories.removeActiveRepositories(source)
+                                    }
+                                } else if (normalizedRef instanceof NormalizedModel.ReleaseTagRef) {
+                                    logger.info(`Reveived release: ${source}/${ref}`)
+                                    return this.publisherManager.publications(source, ref).then(publications => {
+                                        const releasePublications = [new DependencyRef.GitRef(source), publications].flat()
+                                        this.dependencyLookupCache.invalidate(...releasePublications).then(() => {
+                                            return this.scannerManager.processByReferences(...releasePublications)
+                                        })
+                                    })
+                                }
+                            })
+                        } else {
+                            return Promise.resolve()
+                        }
+                    } else {
+                        const buildConfigError = <Error>buildConfig
+                        logger.warn(`Could not parse build-config for ${source}/${sha}: ${buildConfigError}`)
+                    }
+                } else {
+                    logger.debug(`Skip processing push: ${source}/${ref}. Repository not active in ${this.activeSystem.systemId}`)
+                    return Promise.resolve()
+                }
+            })
+        })
+    }
+
+    onDelete(source: RepositorySource, ref: Refs.EntityRef): Promise<void> {
+        return this.activeSystem.isActive(source).then(isActive => {
+            if (isActive) {
+                return this.sourceCache.ensureDeleted(source, ref, ref.refSpec)
+            } else {
+                logger.debug(`Skip processing delete: ${source}/${ref}. Repository not active in ${this.activeSystem.systemId}`)
+                return Promise.resolve()
+            }
+        })
     }
 
 }

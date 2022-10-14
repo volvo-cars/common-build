@@ -2,9 +2,10 @@ import { describe, expect, it } from '@jest/globals'
 import { Version } from '../../../../src/domain-model/version'
 import { DependencyGraphImpl } from '../../../../src/repositories/scanner/dependency-graph-impl'
 import { DependencyRef } from '../../../../src/domain-model/system-config/dependency-ref'
-import { DependencyGraphProblem, GraphTree } from '../../../../src/repositories/scanner/scanner-manager'
 import { JsonUtils } from '../../../../src/utils/json-utils'
 import { RepositorySource } from '../../../../src/domain-model/repository-model/repository-source'
+import { GraphTree } from '../../../../src/repositories/scanner/scanner-manager-impl'
+import { ScannerManager } from '../../../../src/repositories/scanner/scanner-manager'
 
 describe("DependencyGraphImpl", () => {
 
@@ -67,8 +68,8 @@ describe("DependencyGraphImpl", () => {
         console.log(JsonUtils.stringify(problems, 2))
         expect(problems.length).toBe(1)
         const problem = problems[0]
-        expect(problem.type).toBe(DependencyGraphProblem.Type.MULTIPLE_VERSIONS)
-        const multipleVersionProblem = <DependencyGraphProblem.MultipleVersions>problem
+        expect(problem).toBeInstanceOf(ScannerManager.MultipleVersionsProblem)
+        const multipleVersionProblem = <ScannerManager.MultipleVersionsProblem>problem
         expect(multipleVersionProblem.ref.serialize()).toBe(refA.serialize())
         expect(multipleVersionProblem.versions.find(v => { return v.asString() === "1.0.0" })).toBeDefined()
         expect(multipleVersionProblem.versions.find(v => { return v.asString() === "1.1.0" })).toBeDefined()

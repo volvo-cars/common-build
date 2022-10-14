@@ -3,9 +3,9 @@ repositories:
   - csp-gerrit:playground/cynosure_b
   - csp-gerrit:playground/cynosure_c
   - csp-gerrit:playground/cynosure_d
-  - csp-gerrit:ci/common-build-dev-image
-  - csp-gerrit:ci/common-build-agent
-  - csp-gerrit:ci/common-build
   - csp-gerrit-qa:playground/test_cb
-  - csp-gerrit:ci/common-build-deploy-k8s
+  #- csp-gerrit:ci/common-build-dev-image
+  #- csp-gerrit:ci/common-build-agent
+  #- csp-gerrit:ci/common-build
+  #- csp-gerrit:ci/common-build-deploy-k8s
   

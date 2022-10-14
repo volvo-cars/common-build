@@ -14,7 +14,7 @@ export class NormalizedModelUtil {
     }
 
     static normalize(ref: Refs.Ref): NormalizedModel.Ref | undefined {
-        if (ref.type === Refs.Type.TAG) {
+        if (ref instanceof Refs.TagRef) {
             const releaseMatch = ref.name.match(this.releaseTag)
             if (releaseMatch) {
                 return new NormalizedModel.ReleaseTagRef(NormalizedModelUtil.convertToSegments(releaseMatch[1]))
@@ -23,7 +23,7 @@ export class NormalizedModelUtil {
             if (majorMatch) {
                 return new NormalizedModel.MajorTagRef(parseInt(majorMatch[1]))
             }
-        } else if (ref.type === Refs.Type.BRANCH) {
+        } else if (ref instanceof Refs.BranchRef) {
             const mainMatch = ref.name.match(this.mainBranch)
             if (mainMatch) {
                 return new NormalizedModel.MainBranchRef(mainMatch[1])
@@ -41,26 +41,32 @@ export class NormalizedModelUtil {
 }
 
 export namespace NormalizedModel {
+
     export abstract class Ref {
-        constructor(public type: Type) { }
+        constructor() { }
+        abstract get isBranch(): boolean
     }
+
     export class PatchBranchRef extends Ref {
         constructor(public segments: number[]) {
-            super(Type.PATCH_BRANCH)
+            super()
         }
+        override get isBranch(): boolean { return true }
         full(): string {
             return this.segments.join('.')
         }
     }
     export class MainBranchRef extends Ref {
         constructor(public name: string) {
-            super(Type.MAIN_BRANCH)
+            super()
         }
+        override get isBranch(): boolean { return true }
     }
     export class ReleaseTagRef extends Ref {
         constructor(public segments: number[]) {
-            super(Type.RELEASE_TAG)
+            super()
         }
+        override get isBranch(): boolean { return false }
         full(): string {
             return this.segments.join('.')
         }
@@ -74,16 +80,9 @@ export namespace NormalizedModel {
     }
     export class MajorTagRef extends Ref {
         constructor(public major: number) {
-            super(Type.MAJOR_TAG)
+            super()
         }
-    }
-
-
-    export enum Type {
-        MAIN_BRANCH = "main_branch",
-        PATCH_BRANCH = "patch_branch",
-        RELEASE_TAG = "release",
-        MAJOR_TAG = "major"
+        override get isBranch(): boolean { return false }
     }
 }
 

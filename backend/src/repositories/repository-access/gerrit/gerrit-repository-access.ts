@@ -6,7 +6,6 @@ import { ServiceConfig } from "../../../domain-model/system-config/service-confi
 import { LocalGitFactory } from "../../../git/local-git-factory";
 import { createLogger, loggerName } from "../../../logging/logging-factory";
 import { Update, UpdateId } from "../../../system/build-system";
-import { createExecutionSerializer } from "../../../system/execution-serializer";
 import { HttpMethod } from "../../../utils/http";
 import { StringTypedMap } from "../../../utils/model";
 import { encodeReplace } from "../../../utils/string-util";
@@ -14,11 +13,11 @@ import { VaultService } from "../../../vault/vault-service";
 import { AbstractRepositoryAccess } from "../abstract-repository-access";
 import { Content } from "../repository-access";
 import { gerritJsonResponseDecode } from "./gerrit-json-response-decoder";
+import { GerritUpdate } from "./gerrit-update";
 
 const logger = createLogger(loggerName(__filename))
 export class GerritRepositoryAccess extends AbstractRepositoryAccess {
 
-    private executionSerializer = createExecutionSerializer()
     constructor(private config: ServiceConfig.GerritSourceService, localGitFactory: LocalGitFactory, vaultService: VaultService) {
         super(config.id, config.https, localGitFactory, vaultService)
     }
@@ -34,7 +33,6 @@ export class GerritRepositoryAccess extends AbstractRepositoryAccess {
     async rebase(repository: RepositoryPath, updateId: UpdateId): Promise<Refs.ShaRef | null> {
         try {
             const update = await this.internalGetChange(updateId)
-            // console.log(`GOT UPDATE ${JSON.stringify(update, null, 2)}`)
             if (!update.mergeable) {
                 return Promise.reject("Update is not mergeable.")
             }
@@ -72,6 +70,7 @@ export class GerritRepositoryAccess extends AbstractRepositoryAccess {
         }, {})
 
         await this.internalSetLabels(updateId, Refs.ShaRef.create(update.current_revision), labelsToSet)
+
         return this.createGerritRequest(`changes/${updateId}/submit`, HttpMethod.POST, null).then(async response => {
             if (response.status === 200) {
                 const changeInfo = <ChangeInfo>gerritJsonResponseDecode(response.data)
@@ -80,13 +79,13 @@ export class GerritRepositoryAccess extends AbstractRepositoryAccess {
                 if (updatedBranch.revision !== update.current_revision) {
                     logger.warn(`Update commit ${update.current_revision}!= ${updatedBranch.revision} in ${repository} ${updateId} for ${update.branch}`)
                 }
-                const branch = Refs.Branch.create(`refs/heads/${changeInfo.branch}`, updatedBranch.revision)
+                const branch = Refs.Branch.create(changeInfo.branch, updatedBranch.revision)
                 return Promise.resolve(branch)
             } else {
                 return Promise.reject(new Error(`Error while rebasing [${response.status}] ${updateId}`)) // Other error
             }
         }).catch((error: AxiosError) => {
-            const message = `${error.response?.data} Error code:  ${error.response?.status}`
+            const message = `${error.response?.data} Error code:  ${error}`
             logger.error(message)
             return Promise.reject(new Error(message))
         })
@@ -112,7 +111,7 @@ export class GerritRepositoryAccess extends AbstractRepositoryAccess {
             if (response.status === 201) {
                 const tagInfo = <TagInfo>gerritJsonResponseDecode(response.data)
                 if (tagInfo.object) {
-                    return Promise.resolve(Refs.Tag.create(`refs/tags/${name}`, tagInfo.object))
+                    return Promise.resolve(Refs.Tag.create(name, tagInfo.object))
                 } else {
                     return Promise.reject(`Created tag was not annotated for tag ${name}`)
                 }
@@ -127,19 +126,27 @@ export class GerritRepositoryAccess extends AbstractRepositoryAccess {
         return this.createGerritRequest(`changes/?q=status:open+project:{${repository}}&o=CURRENT_REVISION`).then(response => {
             if (response.status === 200) {
                 const changes = <ChangeInfo[]>gerritJsonResponseDecode(response.data)
-                return changes.map(change => new Update(
-                    new RepositorySource(this.config.id, repository),
-                    change.change_id,
-                    Refs.ShaRef.create(change.current_revision),
-                    change.branch,
-                    change.subject,
-                    change.hashtags || [],
-                    change._number,
-                    `https://${_.trimEnd(this.config.https, "/")}/c/${repository}/+/${change._number}`
-                ))
+                return changes.map(change => {
+                    return new GerritUpdate(
+                        new RepositorySource(this.config.id, repository),
+                        change.change_id,
+                        Refs.ShaRef.create(change.current_revision),
+                        change.branch,
+                        change.subject,
+                        change.hashtags || [],
+                        `https://${_.trimEnd(this.config.https, "/")}/c/${repository}/+/${change._number}`,
+                        change._number
+                    )
+                })
             } else {
                 return Promise.reject(new Error(`Could not fetch updates from ${this.config.id}/${repository}: ${response.status}`))
             }
+        })
+    }
+
+    getLabels(id: UpdateId): Promise<string[] | undefined> {
+        return this.internalGetChange(id).then(changeInfo => {
+            return changeInfo.hashtags || []
         })
     }
 
@@ -168,8 +175,12 @@ export class GerritRepositoryAccess extends AbstractRepositoryAccess {
         })
     }
 
-    async updateUpdate(repository: RepositoryPath, updateId: UpdateId, ...content: Content.Content[]): Promise<void> {
-        return this.internalUpsertFileContent(updateId, content)
+    async updateUpdate(repository: RepositoryPath, updateId: UpdateId, ...content: Content.Content[]): Promise<boolean> {
+        if (content.length) {
+            return this.internalUpsertFileContent(updateId, content).then(() => { return true })
+        } else {
+            return Promise.resolve(false)
+        }
     }
 
     private async internalGetProjectLabels(repository: RepositoryPath): Promise<LabelDefinitionInfo[]> {
@@ -187,30 +198,27 @@ export class GerritRepositoryAccess extends AbstractRepositoryAccess {
     }
 
     async internalUpsertFileContent(updateId: UpdateId, content: Content.Content[]): Promise<void> {
-        const cmd = async () => {
-            return Promise.all(content.map(c => {
-                return this.createGerritRequest(`changes/${updateId}/edit/{${c.path}}`, HttpMethod.PUT, {
-                    binary_content: `data:text/plain;base64,${c.content().toString("base64")}`
-                }).then((response) => {
-                    return Promise.resolve(true)
-                }).catch((error: AxiosError) => {
-                    if (error.response?.status === 409) {
-                        return Promise.resolve(false)
-                    } else {
-                        return Promise.reject(error)
-                    }
-                })
-            })).then(updates => {
-                if (_.includes(updates, true)) {
-                    return this.createGerritRequest(`changes/${updateId}/edit:publish`, HttpMethod.POST, {
-                        "notify": "NONE"
-                    }).then(() => { return })
+        return Promise.all(content.map(c => {
+            return this.createGerritRequest(`changes/${updateId}/edit/{${c.path}}`, HttpMethod.PUT, {
+                binary_content: `data:text/plain;base64,${c.content().toString("base64")}`
+            }).then((response) => {
+                return Promise.resolve(true)
+            }).catch((error: AxiosError) => {
+                if (error.response?.status === 409) {
+                    return Promise.resolve(false)
                 } else {
-                    return Promise.resolve()
+                    return Promise.reject(error)
                 }
             })
-        }
-        return this.executionSerializer.execute("upsert-content", cmd)
+        })).then(updates => {
+            if (_.includes(updates, true)) {
+                return this.createGerritRequest(`changes/${updateId}/edit:publish`, HttpMethod.POST, {
+                    "notify": "NONE"
+                }).then(() => { return })
+            } else {
+                return Promise.resolve()
+            }
+        })
     }
 
     async internalSetHashTags(updateId: UpdateId, tags: string[]): Promise<void> {
@@ -312,6 +320,7 @@ export type ChangeInfo = {
     hashtags?: string[],
     is_private?: boolean,
     _number: number
+
 }
 
 export enum ChangeInfoStatus {

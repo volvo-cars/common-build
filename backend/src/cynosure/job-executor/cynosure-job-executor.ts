@@ -99,7 +99,10 @@ export class CynosureJobExecutor implements JobExecutor.Executor, ShutdownManage
         if (listener) {
             const handleError = (e: Error, uid: string, key: JobExecutor.Key, state: ProcessingStates.JobState, config: WaitRetryConfig): Promise<void> => {
                 if (state.failureCount < config.retryCount) {
-                    logger.warn(`Wait in [${state.constructor.name}] for ${key} (${e}). Rescheduling retry ${state.failureCount + 1}/${config.retryCount}.`)
+                    if ((state.failureCount + 1) % 5 === 0) {
+                        listener.onJobLog(key, `Waiting for Cynosure in state \`${state.stateName}\` Attempts: ${state.failureCount + 1}/${config.retryCount}.`, "warning")
+                    }
+                    logger.warn(`Waitin in [${state.constructor.name}] for ${key} (${e}). Rescheduling retry ${state.failureCount + 1}/${config.retryCount}.`)
                     return this.taskQueue.upsert(uid, config.wait, state.withNewFailure().serialize())
                 } else {
                     logger.warn(`Error in [${state.constructor.name}] for ${key}. No more retries of ${config.retryCount}. Signalling JobError.`)

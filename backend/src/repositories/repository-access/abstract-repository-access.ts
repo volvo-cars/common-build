@@ -16,6 +16,7 @@ const logger = createLogger(loggerName(__filename))
 export abstract class AbstractRepositoryAccess implements RepositoryAccess {
 
     constructor(private id: string, private host: string, private localGitFactory: LocalGitFactory, private vaultService: VaultService) { }
+
     abstract setValidBuild(repository: string, updateId: string, ref: Refs.ShaRef): Promise<void>
 
     protected async createRequest(path: string, method: HttpMethod = HttpMethod.GET, data?: any): Promise<AxiosResponse<any, any>> {
@@ -86,9 +87,11 @@ export abstract class AbstractRepositoryAccess implements RepositoryAccess {
 
     abstract getUpdates(repository: RepositoryPath): Promise<Update[]>
 
+    abstract getLabels(id: UpdateId): Promise<string[] | undefined>
+
     abstract createUpdate(repository: RepositoryPath, target: Refs.BranchRef, labels: string[], ...content: Content.Content[]): Promise<UpdateId>
 
-    abstract updateUpdate(repository: RepositoryPath, updateId: UpdateId, ...content: Content.Content[]): Promise<void>
+    abstract updateUpdate(repository: RepositoryPath, updateId: UpdateId, ...content: Content.Content[]): Promise<boolean>
 }
 
 

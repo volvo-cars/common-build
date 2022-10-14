@@ -13,6 +13,8 @@ export namespace ProcessingStates {
 
         abstract withNewFailure(): JobState
 
+        abstract readonly stateName: string
+
         static deserialize(string: string): JobState {
             const pos = string.indexOf(":")
             const className = string.substring(0, pos)
@@ -22,6 +24,8 @@ export namespace ProcessingStates {
     }
 
     export class JobStarting extends JobState {
+
+        readonly stateName: string = "Starting"
 
         constructor(public readonly productId: string, failureCount: number) {
             super(failureCount)
@@ -38,6 +42,9 @@ export namespace ProcessingStates {
     }
 
     export class JobStarted extends JobState {
+
+        readonly stateName: string = "Started"
+
         constructor(public readonly productId: string, public readonly activityId: string, failureCount: number) {
             super(failureCount)
         }
@@ -53,6 +60,9 @@ export namespace ProcessingStates {
     }
 
     export class JobQueued extends JobState {
+
+        readonly stateName: string = "Queued"
+
         constructor(failureCount: number) {
             super(failureCount)
         }
@@ -65,6 +75,9 @@ export namespace ProcessingStates {
     }
 
     export class JobAbort extends JobState {
+
+        readonly stateName: string = "Abort"
+
         public reason: string
         constructor(reason: string) {
             super(0)

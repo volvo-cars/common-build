@@ -8,20 +8,20 @@ import { ServiceConfig } from '../../../domain-model/system-config/service-confi
 import { createLogger, loggerName } from '../../../logging/logging-factory';
 import { splitAndFilter } from '../../../utils/string-util';
 import { RepositoryAccessFactory } from '../../repository-access/repository-access-factory';
-import { DependencyProvider } from '../dependency-provider';
+import { DependencyLookup } from '../dependency-lookup';
 import { LabelCriteria } from '../label-criteria';
-import { DependencyUpdate, ScanResult } from '../scanner';
-import { Dependency, ScannerProvider } from "../scanner-provider";
+import { Scanner } from '../scanner';
+
 import { RevisionUtil } from './revision-util';
 
 const logger = createLogger(loggerName(__filename))
 
-export class GoogleRepoScannerProvider implements ScannerProvider {
+export class GoogleRepoScannerProvider implements Scanner.Provider {
     private static DEFAULT_XML_FILE = "default.xml"
 
     constructor(private repositoryAccessFactory: RepositoryAccessFactory, private sources: ServiceConfig.SourceService[]) { }
 
-    async dependencies(source: RepositorySource, ref: Refs.Ref): Promise<Dependency[]> {
+    async getDependencies(source: RepositorySource, ref: Refs.ShaRef | Refs.TagRef): Promise<Scanner.Dependency[]> {
         const defaultXml = await this.repositoryAccessFactory.createAccess(source.id).getFile(source.path, GoogleRepoScannerProvider.DEFAULT_XML_FILE, ref)
         if (defaultXml) {
             const $ = cheerio.load(defaultXml, {
@@ -33,7 +33,7 @@ export class GoogleRepoScannerProvider implements ScannerProvider {
             const extractor = DefaulXmlExtractor.Extractor.createFromXml($)
             const extracts = extractor.extract()
 
-            const allDependencies: Dependency[] = []
+            const allDependencies: Scanner.Dependency[] = []
             $("project").each((n, elem) => {
                 const item = $(elem)
                 const name = item.attr("name")
@@ -50,7 +50,7 @@ export class GoogleRepoScannerProvider implements ScannerProvider {
                         if (version) {
                             const source = this.findSource(dependencyRemote)
                             if (source) {
-                                allDependencies.push(new Dependency(
+                                allDependencies.push(new Scanner.Dependency(
                                     new DependencyRef.GitRef(new RepositorySource(source.id, trimmedName)),
                                     version
                                 ))
@@ -87,7 +87,7 @@ export class GoogleRepoScannerProvider implements ScannerProvider {
 
 
 
-    async scan(source: RepositorySource, ref: Refs.Ref, dependencyProvider: DependencyProvider, labelCriteria: LabelCriteria.Criteria): Promise<ScanResult> {
+    async scan(source: RepositorySource, ref: Refs.Ref, dependencyProvider: DependencyLookup.Provider, labelCriteria: LabelCriteria.Criteria): Promise<Scanner.ScanResult> {
         const defaultXml = await this.repositoryAccessFactory.createAccess(source.id).getFile(source.path, GoogleRepoScannerProvider.DEFAULT_XML_FILE, ref)
         if (defaultXml) {
 
@@ -112,8 +112,7 @@ export class GoogleRepoScannerProvider implements ScannerProvider {
                 const $ = cheerio.load(defaultXml, {
                     xmlMode: true
                 })
-                let replaces: Promise<void>[] = []
-                let changeCount = 0
+                let replaces: Promise<boolean>[] = []
                 $("project").each((n, elem) => {
                     const item = $(elem)
                     const name = item.attr("name")
@@ -122,66 +121,62 @@ export class GoogleRepoScannerProvider implements ScannerProvider {
                     const dependencyRemote = extracts.find(e => { return e.name === dependencyRemoteName })
                     if (dependencyRemote) {
                         if (name) {
-                            const relevantLabels = splitAndFilter(item.attr("label") || item.attr("labels") || LabelCriteria.DEFAULT_LABEL_NAME)
-                            const process = _.includes(relevantLabels, relevantLabel)
+                            const projectLabels = splitAndFilter(item.attr("label") || item.attr("labels") || LabelCriteria.DEFAULT_LABEL_NAME)
+                            const process = _.includes(projectLabels, relevantLabel)
                             if (process) {
                                 let trimmedName = name.replace(/\.git$/i, "")
                                 if (dependencyRemote.path) {
                                     trimmedName = [dependencyRemote.path, trimmedName].join("/")
                                 }
-                                replaces.push(new Promise<void>((resolve, reject) => {
-                                    const sourceConfig = this.findSource(dependencyRemote)
-                                    if (sourceConfig) {
+                                const sourceConfig = this.findSource(dependencyRemote)
+                                if (sourceConfig) {
+                                    replaces.push(new Promise<boolean>((resolve, reject) => {
                                         const dependencyRef = new DependencyRef.GitRef(new RepositorySource(sourceConfig.id, trimmedName))
                                         allDependencies.push(dependencyRef)
                                         const validDependencyVersion = dependencyRevision ? RevisionUtil.extractVersion(dependencyRevision) : undefined
-                                        if (validDependencyVersion !== null) {
-                                            dependencyProvider.getVersion(dependencyRef).then(newVersion => {
-                                                if (newVersion) {
-                                                    if (!validDependencyVersion || newVersion.compare(validDependencyVersion) !== 0) {
-                                                        item.attr("revision", RevisionUtil.encodeVersion(newVersion))
-                                                        changeCount++
-                                                    }
+                                        if (validDependencyVersion) {
+                                            dependencyProvider.getVersion(dependencyRef, validDependencyVersion).then(newVersion => {
+                                                if (newVersion && newVersion.compare(validDependencyVersion) !== 0) {
+                                                    item.attr("revision", RevisionUtil.encodeVersion(newVersion))
+                                                    resolve(true)
+                                                } else {
+                                                    resolve(false)
                                                 }
-                                                resolve()
-                                            }).catch(e => { resolve(e) })
+                                            }).catch(e => {
+                                                logger.error(`Failed to scan ${source}/${ref}: ${e}`)
+                                                console.error(e)
+                                                resolve(false)
+                                            })
                                         } else {
-                                            resolve()
+                                            resolve(false)
                                         }
-                                    } else {
-                                        logger.warn(`Could not find configured source for host ${dependencyRemote} in ${GoogleRepoScannerProvider.DEFAULT_XML_FILE}. (${source.toString()}/${ref.name}) in config ${this.sources.join(",")}`)
-                                        resolve()
-                                    }
-                                }))
+                                    }))
+                                }
                             }
                         }
                     } else {
                         logger.warn(`Missing remote host mapping for ${defaultRemoteName} in ${extracts.map(e => { return `${e.name}=${e.host}` }).join(",")} ${source}/${ref.name} ${name}/${dependencyRevision}`)
                     }
                 })
-                await Promise.all(replaces)
-                if (changeCount) {
-                    return Promise.resolve([
-                        <DependencyUpdate>{
-                            label: relevantLabel,
-                            path: GoogleRepoScannerProvider.DEFAULT_XML_FILE,
-                            content: $.xml()
-                        }
-                    ])
-                } else {
-                    return Promise.resolve([])
-                }
+                return Promise.all(replaces).then(replaceResult => {
+                    if (_.includes(replaceResult, true)) {
+                        const newContent = $.xml()
+                        return [
+                            new Scanner.DependencyUpdate(
+                                relevantLabel,
+                                GoogleRepoScannerProvider.DEFAULT_XML_FILE,
+                                newContent
+                            )
+                        ]
+                    } else {
+                        return []
+                    }
+                })
             })))
             const uniqueRefs = DependencyRef.uniqueRefs(allDependencies)
-            return Promise.resolve({
-                allDependencies: uniqueRefs,
-                updates: allUpdates
-            })
+            return Promise.resolve(new Scanner.ScanResult(uniqueRefs, allUpdates))
         } else {
-            return Promise.resolve({
-                allDependencies: [],
-                updates: []
-            })
+            return Promise.resolve(new Scanner.ScanResult([], []))
         }
     }
 }

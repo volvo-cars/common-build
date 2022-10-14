@@ -26,20 +26,19 @@ const logger = createLogger(loggerName(__filename))
 export class SystemFilesAccessImpl implements SystemFilesAccess {
     constructor(private repositoryAcccessFactory: RepositoryAccessFactory) { }
 
-    private static CONFIG_REF = Refs.BranchRef.create("refs/meta/config")
 
     getFile(source: RepositorySource, path: string, ref: Refs.Ref): Promise<string | undefined> {
         return this.repositoryAcccessFactory.createAccess(source.id).getFile(source.path, path, ref).then(result => { return result || undefined })
     }
 
     getRepositoryConfig(source: RepositorySource): Promise<RepositoryConfig.Config | undefined> {
-        return this.repositoryAcccessFactory.createAccess(source.id).getFile(source.path, "config.yml", SystemFilesAccessImpl.CONFIG_REF).then(content => {
+        return this.repositoryAcccessFactory.createAccess(source.id).getFile(source.path, "config.yml", Refs.MetaConfigBranchRef.INSTANCE).then(content => {
             if (content) {
                 try {
                     let repositoryConfigYml = YAML.parse(content)
                     return Codec.toInstance(repositoryConfigYml, RepositoryConfig.Config)
                 } catch (e) {
-                    logger.warn(`Parse error on config.yml: ${e} ${source} Ref:${SystemFilesAccessImpl.CONFIG_REF.name}`)
+                    logger.warn(`Parse error on config.yml: ${e} ${source} Ref:${Refs.MetaConfigBranchRef.INSTANCE.name}`)
                     return Promise.resolve(undefined)
                 }
             } else {
@@ -53,7 +52,7 @@ export class SystemFilesAccessImpl implements SystemFilesAccess {
             const content = [
                 new LocalGitCommands.Content("config.yml", YAML.stringify(Codec.toPlain(config)))
             ]
-            return access.updateBranch(source.path, SystemFilesAccessImpl.CONFIG_REF, content)
+            return access.updateBranch(source.path, Refs.MetaConfigBranchRef.INSTANCE, content)
         } else {
             return Promise.reject(new Error("Invalid config"))
         }

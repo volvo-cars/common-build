@@ -1,6 +1,6 @@
 import { RepositorySource } from "../../domain-model/repository-model/repository-source";
 import { RedisFactory } from "../../redis/redis-factory";
-import { RepositoryAccessFactory } from "../repository-access/repository-access-factory";
+import { SourceCache } from "../../system/source-cache";
 import { RawModelRepository } from "./raw-model-repository";
 import { Repository, RepositoryImpl } from "./repository";
 
@@ -9,12 +9,16 @@ export interface RepositoryFactory {
 }
 
 export class RepositoryFactoryImpl implements RepositoryFactory {
+
     private readonly rawModelRepository: RawModelRepository
-    constructor(private redis: RedisFactory, private repositoryAccessFactory: RepositoryAccessFactory) {
-        this.rawModelRepository = new RawModelRepository(redis)
+
+    constructor(redis: RedisFactory, sourceCache: SourceCache.Service) {
+        this.rawModelRepository = new RawModelRepository(redis, sourceCache)
     }
+
     get(source: RepositorySource): Repository {
-        return new RepositoryImpl(this.repositoryAccessFactory.createAccess(source.id), source, this.rawModelRepository)
+        return new RepositoryImpl(source, this.rawModelRepository)
     }
+
 }
 

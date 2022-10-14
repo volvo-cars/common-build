@@ -7,17 +7,16 @@ import { DependencyRef } from '../../../domain-model/system-config/dependency-re
 import { createLogger, loggerName } from '../../../logging/logging-factory';
 import { splitAndFilter } from '../../../utils/string-util';
 import { SystemFilesAccess } from '../../system-files-access';
-import { DependencyProvider } from '../dependency-provider';
+import { DependencyLookup } from '../dependency-lookup';
 import { LabelCriteria } from '../label-criteria';
-import { DependencyUpdate, ScanResult } from "../scanner";
-import { Dependency, ScannerProvider } from "../scanner-provider";
+import { Scanner } from "../scanner";
 import { DockerUtils } from './docker-utils';
 const logger = createLogger(loggerName(__filename))
 
-export class BuildYamlScannerProvider implements ScannerProvider {
+export class BuildYamlScannerProvider implements Scanner.Provider {
     constructor(private systemFilesAccess: SystemFilesAccess) { }
 
-    dependencies(source: RepositorySource, ref: Refs.Ref): Promise<Dependency[]> {
+    getDependencies(source: RepositorySource, ref: Refs.ShaRef | Refs.TagRef): Promise<Scanner.Dependency[]> {
         return this.systemFilesAccess.getBuildConfig(source, ref).then(async config => {
             if (config) {
                 return Promise.all(config.build.steps.map(step => {
@@ -26,7 +25,7 @@ export class BuildYamlScannerProvider implements ScannerProvider {
                             const imageVersion = ImageVersionUtil.ImageVersion.parse(node.image)
                             if (imageVersion) {
                                 const imageRef = new DependencyRef.ImageRef(imageVersion.registry, imageVersion.repository)
-                                return Promise.resolve([new Dependency(imageRef, imageVersion.version)])
+                                return Promise.resolve([new Scanner.Dependency(imageRef, imageVersion.version)])
                             } else {
                                 return Promise.resolve([])
                             }
@@ -41,7 +40,7 @@ export class BuildYamlScannerProvider implements ScannerProvider {
                                     const imageVersion = ImageVersionUtil.ImageVersion.parse(rawImage)
                                     if (imageVersion) {
                                         const imageRef = new DependencyRef.ImageRef(imageVersion.registry, imageVersion.repository)
-                                        return Promise.resolve([new Dependency(imageRef, imageVersion.version)])
+                                        return Promise.resolve([new Scanner.Dependency(imageRef, imageVersion.version)])
                                     } else {
                                         return Promise.resolve([])
                                     }
@@ -65,7 +64,7 @@ export class BuildYamlScannerProvider implements ScannerProvider {
         })
     }
 
-    async scan(source: RepositorySource, ref: Refs.Ref, dependencyProvider: DependencyProvider, labelCriteria: LabelCriteria.Criteria): Promise<ScanResult> {
+    scan(source: RepositorySource, ref: Refs.ShaRef | Refs.TagRef, dependencyProvider: DependencyLookup.Provider, labelCriteria: LabelCriteria.Criteria): Promise<Scanner.ScanResult> {
         return this.systemFilesAccess.getBuildConfig(source, ref).then(async config => {
             if (config) {
                 const allLabels: string[][] = []
@@ -90,7 +89,7 @@ export class BuildYamlScannerProvider implements ScannerProvider {
                 const allUpdates = _.flatten(await Promise.all(relevantLabels.map(async relevantLabel => {
                     const clonedConfig = _.cloneDeep(config)
                     let replaces: Promise<void>[] = []
-                    let dockerFileReplaces: Promise<DependencyUpdate | undefined>[] = []
+                    let dockerFileReplaces: Promise<Scanner.DependencyUpdate | undefined>[] = []
                     let configFileChanges = 0
                     clonedConfig.build.steps.forEach(step => {
                         if (step instanceof BuildConfig.BuildCompose.Step) {
@@ -102,7 +101,7 @@ export class BuildYamlScannerProvider implements ScannerProvider {
                                         if (imageVersion) {
                                             const dependencyRef = new DependencyRef.ImageRef(imageVersion.registry, imageVersion.repository)
                                             allDependencies.push(dependencyRef)
-                                            dependencyProvider.getVersion(dependencyRef).then(newVersion => {
+                                            dependencyProvider.getVersion(dependencyRef, imageVersion.version).then(newVersion => {
                                                 if (newVersion) {
                                                     if (newVersion.compare(imageVersion.version) !== 0) {
                                                         node.image = imageVersion.withVersion(newVersion).asString()
@@ -111,6 +110,8 @@ export class BuildYamlScannerProvider implements ScannerProvider {
                                                 }
                                                 resolve()
                                             }).catch(e => { resolve(e) })
+                                        } else {
+                                            resolve()
                                         }
                                     }))
                                 }
@@ -124,10 +125,10 @@ export class BuildYamlScannerProvider implements ScannerProvider {
                                         if (imageVersion) {
                                             const dependencyRef = new DependencyRef.ImageRef(imageVersion.registry, imageVersion.repository)
                                             allDependencies.push(dependencyRef)
-                                            return dependencyProvider.getVersion(dependencyRef).then(newVersion => {
+                                            return dependencyProvider.getVersion(dependencyRef, imageVersion.version).then(newVersion => {
                                                 if (newVersion) {
                                                     if (newVersion.compare(imageVersion.version) !== 0) {
-                                                        return new DependencyUpdate(
+                                                        return new Scanner.DependencyUpdate(
                                                             relevantLabel,
                                                             step.file,
                                                             dockerFileContent.replace(rawImage, imageVersion.withVersion(newVersion).asString()))
@@ -153,28 +154,22 @@ export class BuildYamlScannerProvider implements ScannerProvider {
 
                     })
                     await Promise.all(replaces)
-                    const dockerFileDependencies = <DependencyUpdate[]>(await Promise.all(dockerFileReplaces)).filter(r => { return r ? true : false })
+                    const dockerFileDependencies = <Scanner.DependencyUpdate[]>(await Promise.all(dockerFileReplaces)).filter(r => { return r ? true : false })
 
                     return Promise.resolve([configFileChanges ? [
-                        <DependencyUpdate>{
-                            label: relevantLabel,
-                            path: BuildConfig.FILE_PATH,
-                            content: this.systemFilesAccess.serialize(clonedConfig)
-                        }] : [],
+                        new Scanner.DependencyUpdate(
+                            relevantLabel,
+                            BuildConfig.FILE_PATH,
+                            this.systemFilesAccess.serialize(clonedConfig)
+                        )] : [],
                         dockerFileDependencies
                     ].flat())
 
                 })))
                 const uniqueRefs = DependencyRef.uniqueRefs(allDependencies)
-                return Promise.resolve({
-                    allDependencies: uniqueRefs,
-                    updates: allUpdates
-                })
+                return Promise.resolve(new Scanner.ScanResult(uniqueRefs, allUpdates))
             } else {
-                return Promise.resolve(<ScanResult>{
-                    allDependencies: [],
-                    updates: []
-                })
+                return Promise.resolve(new Scanner.ScanResult([], []))
             }
         })
     }

@@ -1,4 +1,5 @@
 import { createLogger, loggerName } from "../logging/logging-factory";
+import { RedisFactory } from "../redis/redis-factory";
 
 export interface ExecutionSerializer {
     /**
@@ -12,34 +13,28 @@ export interface ExecutionSerializer {
 const logger = createLogger(loggerName(__filename))
 class ExecutionSerializerImpl implements ExecutionSerializer {
 
-    private lastRegisteredBySemaphore: Map<string, Promise<any>> = new Map()
+    private lastPromiseByKey: Map<string, Promise<any>> = new Map()
 
-    constructor() { }
+    constructor() {
+
+    }
 
     async execute<T>(semaphore: string, f: () => Promise<T>): Promise<T> {
         const key = `semaphore:${semaphore}`
 
-        const preparePromise = (): Promise<T> => {
-            const maybeLastRegistered = this.lastRegisteredBySemaphore.get(key)
-            if (maybeLastRegistered) {
-                let lastRegistered = maybeLastRegistered
-                return new Promise<T>((resolve, reject) => {
-                    lastRegistered.finally(() => {
-                        f().then(resolve).catch(reject)
-                    })
+        const lastPromise = this.lastPromiseByKey.get(key)
+
+        const newPromise = new Promise<T>((resolve, reject) => {
+            if (lastPromise) {
+                lastPromise.finally(() => {
+                    f().then(resolve).catch(reject)
                 })
             } else {
-                return f()
-            }
-        }
-        let preparedPromise = preparePromise()
-        this.lastRegisteredBySemaphore.set(key, preparedPromise)
-        preparedPromise.finally(() => {
-            if (preparedPromise === this.lastRegisteredBySemaphore.get(key)) {
-                this.lastRegisteredBySemaphore.delete(key)
+                f().then(resolve).catch(reject)
             }
         })
-        return preparedPromise
+        this.lastPromiseByKey.set(key, newPromise)
+        return newPromise
     }
 }
 

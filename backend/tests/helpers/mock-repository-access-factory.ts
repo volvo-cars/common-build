@@ -12,6 +12,9 @@ const logger = createLogger(loggerName(__filename))
 
 export class MockRepositoryAccessFactory implements RepositoryAccessFactory, RepositoryAccess {
     constructor(private readonly files: StringTypedMap<string>) { }
+    getLabels(id: string): Promise<string[] | undefined> {
+        throw new Error("Method not implemented.")
+    }
     setValidBuild(repository: string, updateId: string, ref: Refs.ShaRef): Promise<void> {
         return Promise.resolve()
     }
@@ -36,6 +39,8 @@ export class MockRepositoryAccessFactory implements RepositoryAccessFactory, Rep
     getTag(repository: string, name: string): Promise<Refs.Tag | undefined> {
         throw new Error("Method not implemented.")
     }
+
+
     createTag(repository: string, sha: Refs.ShaRef, name: string, message?: string): Promise<Refs.Tag> {
         throw new Error("Method not implemented.")
     }
@@ -48,10 +53,9 @@ export class MockRepositoryAccessFactory implements RepositoryAccessFactory, Rep
     createUpdate(repository: string, target: Refs.Ref, labels: string[], ...content: Content.Content[]): Promise<UpdateId> {
         throw new Error("Method not implemented.")
     }
-    updateUpdate(repository: string, updateId: string, ...content: Content.Content[]): Promise<void> {
+    updateUpdate(repository: string, updateId: string, ...content: Content.Content[]): Promise<boolean> {
         throw new Error("Method not implemented.")
     }
-
 
     getFile(repository: RepositoryPath, path: string, revision: Refs.Ref): Promise<string | null> {
         const content = this.files[path] || null

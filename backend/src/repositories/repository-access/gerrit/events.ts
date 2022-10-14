@@ -21,7 +21,7 @@ export namespace Events {
     }
 
     export type PatchSet = {
-        number: string,
+        number: number,
         revision: string,
         ref: string
     }

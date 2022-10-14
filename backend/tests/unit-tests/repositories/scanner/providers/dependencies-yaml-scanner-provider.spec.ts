@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@jest/globals'
 import { Version } from "../../../../../src/domain-model/version"
-import { DependencyProvider } from '../../../../../src/repositories/scanner/dependency-provider'
+import { DependencyLookup } from '../../../../../src/repositories/scanner/dependency-lookup'
 import { DependencyRef } from "../../../../../src/domain-model/system-config/dependency-ref"
 import { LabelCriteria } from "../../../../../src/repositories/scanner/label-criteria"
 import { DependenciesYamlScannerProvider } from '../../../../../src/repositories/scanner/providers/dependencies-yaml-scanner-provider'
@@ -14,7 +14,8 @@ import _ from 'lodash'
 import { RepositorySource } from '../../../../../src/domain-model/repository-model/repository-source'
 import { DependenciesConfig } from '../../../../../src/domain-model/system-config/dependencies-config'
 import { Codec } from '../../../../../src/domain-model/system-config/codec'
-import { Dependency } from '../../../../../src/repositories/scanner/scanner-provider'
+import { ScannerManager } from '../../../../../src/repositories/scanner/scanner-manager'
+import { Scanner } from '../../../../../src/repositories/scanner/scanner'
 describe("Test DependenciesYaml provider", () => {
 
     const repositoryAccessFactory = new MockRepositoryAccessFactory({ [DependenciesConfig.FILE_PATH]: DEPENDENCIES_YAML })
@@ -24,8 +25,8 @@ describe("Test DependenciesYaml provider", () => {
     const dummySha = Refs.ShaRef.create(_.repeat("0", 40))
     it("Make sure order is kept", async () => {
         const provider = new DependenciesYamlScannerProvider(new SystemFilesAccessImpl(repositoryAccessFactory))
-        const result = await provider.scan(fakeSource, dummySha, <DependencyProvider>{
-            getVersion: (ref: DependencyRef.Ref): Promise<Version> => {
+        const result = await provider.scan(fakeSource, dummySha, <DependencyLookup.Provider>{
+            getVersion: (ref: DependencyRef.Ref, current: Version): Promise<Version> => {
                 if (ref instanceof DependencyRef.ArtifactRef) {
                     if (ref.path === "A/A") {
                         expect(ref.remote).toBe("remote_override")
@@ -46,15 +47,15 @@ describe("Test DependenciesYaml provider", () => {
                 return Promise.reject(new Error(`Could not find version for ${ref}`))
             }
         }, LabelCriteria.includeAll())
-        expect(result.updates.length).toBe(3)
-        result.updates.forEach(update => {
+        expect(result.dependencyUpdates.length).toBe(3)
+        result.dependencyUpdates.forEach(update => {
             console.log(update.label, update.path, update.content)
         })
 
         expect(result.allDependencies.length).toBe(3)
-        const updateA = result.updates.find(update => { return update.label === "default" })
-        const updateB = result.updates.find(update => { return update.label === "B" })
-        const updateC = result.updates.find(update => { return update.label === "C" })
+        const updateA = result.dependencyUpdates.find(update => { return update.label === "default" })
+        const updateB = result.dependencyUpdates.find(update => { return update.label === "B" })
+        const updateC = result.dependencyUpdates.find(update => { return update.label === "C" })
         expect(updateA).toBeDefined()
         expect(updateB).toBeDefined()
         expect(updateC).toBeDefined()
@@ -80,10 +81,10 @@ describe("Test DependenciesYaml provider", () => {
 
     it("Extract dependencies", async () => {
         const provider = new DependenciesYamlScannerProvider(new SystemFilesAccessImpl(repositoryAccessFactory))
-        const dependencies = await provider.dependencies(fakeSource, dummySha)
+        const dependencies = await provider.getDependencies(fakeSource, dummySha)
         expect(dependencies.length).toBe(3)
         expect(dependencies).toEqual([
-            new Dependency(
+            new Scanner.Dependency(
                 new DependencyRef.ArtifactRef(
                     "remote_override",
                     "repo_override",
@@ -91,7 +92,7 @@ describe("Test DependenciesYaml provider", () => {
                 ),
                 Version.create("1.0.0")
             ),
-            new Dependency(
+            new Scanner.Dependency(
                 new DependencyRef.ArtifactRef(
                     "remote",
                     "repo",
@@ -99,7 +100,7 @@ describe("Test DependenciesYaml provider", () => {
                 ),
                 Version.create("1.1.0")
             ),
-            new Dependency(
+            new Scanner.Dependency(
                 new DependencyRef.ArtifactRef(
                     "remote",
                     "repo",

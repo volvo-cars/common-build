@@ -4,19 +4,18 @@ import { RepositorySource } from '../../domain-model/repository-model/repository
 import { DependencyRef } from '../../domain-model/system-config/dependency-ref';
 import { Version } from '../../domain-model/version';
 import { createLogger, loggerName } from '../../logging/logging-factory';
-import { DependencyLookupProvider } from './dependency-lookup-provider';
-import { DependencyProviderImpl } from "./dependency-provider";
+import { DependencyLookup } from "./dependency-lookup";
 import { LabelCriteria } from "./label-criteria";
-import { Scanner, ScanResult } from "./scanner";
-import { ScannerProvider } from "./scanner-provider";
+import { Scanner } from './scanner';
 
 const logger = createLogger(loggerName(__filename))
 
-export class ScannerImpl implements Scanner {
-    constructor(private providers: ScannerProvider[]) { }
+export class ScannerImpl implements Scanner.Service {
+    constructor(private providers: Scanner.Provider[]) { }
 
-    async dependencies(source: RepositorySource, ref: Refs.Ref): Promise<Map<DependencyRef.Ref, Version[]>> {
-        const allDependencies = (await Promise.all(this.providers.map(provider => { return provider.dependencies(source, ref) }))).flat()
+
+    async getDependencies(source: RepositorySource, ref: Refs.ShaRef | Refs.TagRef): Promise<Map<DependencyRef.Ref, Version[]>> {
+        const allDependencies = (await Promise.all(this.providers.map(provider => { return provider.getDependencies(source, ref) }))).flat()
         const dependencyVersionsStringMap: Map<string, string[]> = new Map()
         allDependencies.forEach(dependency => {
             const serializedDependency = dependency.ref.serialize()
@@ -33,19 +32,18 @@ export class ScannerImpl implements Scanner {
 
     }
 
-    async scan(source: RepositorySource, major: number | undefined, ref: Refs.ShaRef, dependencyLookupProvider: DependencyLookupProvider, labelCriteria: LabelCriteria.Criteria): Promise<ScanResult> {
-        //const branches = await repositoryAccess.getBranches(source.path)
-        logger.debug(`Scanning ${source}/${ref.name} (major:${major}) with ${this.providers.length} providers.`)
-        const dependencyProvider = new DependencyProviderImpl(major, dependencyLookupProvider)
-        const allResults = (await Promise.all(this.providers.map(provider => { return provider.scan(source, ref, dependencyProvider, labelCriteria) })))
-        return _.reduce(allResults, (acc: ScanResult, next: ScanResult) => {
-            return {
-                allDependencies: _.union(acc.allDependencies, next.allDependencies),
-                updates: _.union(acc.updates, next.updates)
-            }
-        }, {
-            allDependencies: [],
-            updates: []
+    async scan(source: RepositorySource, ref: Refs.ShaRef | Refs.TagRef, dependencyProvider: DependencyLookup.Provider, labelCriteria: LabelCriteria.Criteria): Promise<Scanner.ScanResult> {
+        return Promise.all(this.providers.map(provider => {
+            return provider.scan(source, ref, dependencyProvider, labelCriteria)
+        })).then(allResults => {
+
+            return _.reduce(allResults, (acc: Scanner.ScanResult, next: Scanner.ScanResult) => {
+                return new Scanner.ScanResult(
+                    _.union(acc.allDependencies, next.allDependencies),
+                    _.union(acc.dependencyUpdates, next.dependencyUpdates)
+                )
+            }, new Scanner.ScanResult([], []))
         })
+
     }
 }

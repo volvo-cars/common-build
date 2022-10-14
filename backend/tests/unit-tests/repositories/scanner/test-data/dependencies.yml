@@ -1,0 +1,28 @@
+version: 1
+artifacts:
+  remote: ara-artifactory.volvocars.biz
+  repository: ARTCSP-CI
+  items:
+    - path: csp/nodes/hi
+      revision: 0.13.0
+      toDir: hi
+      files:
+        - name: hi_vbfs.tgz
+    - path: csp/nodes/lpa
+      revision: 0.18.0
+      toDir: lpa
+      files:
+        - name: lpa.tgz
+    - path: csp/nodes/sga
+      revision: 0.12.0
+      toDir: sga
+      files:
+        - name: factory_images.tgz
+      labels: sga+hpa
+    - path: csp/nodes/hpa
+      revision: 0.6.0
+      toDir: hpa
+      files:
+        - name: hpa_images.tgz
+      labels: sga+hpa
+images: null

@@ -10,6 +10,7 @@ import { Content } from "../repository-access";
 
 const logger = createLogger(loggerName(__filename))
 export class GitlabRepositoryAccess extends AbstractRepositoryAccess {
+
     setValidBuild(repository: string, updateId: string, ref: Refs.ShaRef): Promise<void> {
         return Promise.reject('Operation not implemented in GitLab access')
     }
@@ -38,11 +39,15 @@ export class GitlabRepositoryAccess extends AbstractRepositoryAccess {
         return Promise.reject('Operation not implemented in GitLab access')
     }
 
+    getLabels(id: UpdateId): Promise<string[] | undefined> {
+        throw new Error("Method not implemented.");
+    }
+
     createUpdate(repository: RepositoryPath, target: Refs.BranchRef, labels: string[], ...content: Content.Content[]): Promise<UpdateId> {
         return Promise.reject('Operation not implemented in GitLab access')
     }
 
-    async updateUpdate(repository: RepositoryPath, updateId: UpdateId, ...content: Content.Content[]): Promise<void> {
+    async updateUpdate(repository: RepositoryPath, updateId: UpdateId, ...content: Content.Content[]): Promise<boolean> {
         return Promise.reject('Operation not implemented in GitLab access')
     }
 

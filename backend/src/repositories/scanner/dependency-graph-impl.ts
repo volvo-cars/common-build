@@ -1,10 +1,11 @@
 import { Version } from "../../domain-model/version";
 import { DependencyRef } from "../../domain-model/system-config/dependency-ref";
-import { DependencyGraph, DependencyGraphProblem, GraphTree } from "./scanner-manager";
 import _ from "lodash"
-export class DependencyGraphImpl implements DependencyGraph {
+import { ScannerManager } from "./scanner-manager";
+import { GraphTree } from "./scanner-manager-impl";
+export class DependencyGraphImpl implements ScannerManager.DependencyGraph {
     constructor(private graphs: GraphTree[]) { }
-    getProblems(): DependencyGraphProblem.Problem[] {
+    getProblems(): ScannerManager.DependencyProblem[] {
         const allVersionsByRef: Map<string, string[]> = new Map()
         const traverseGraph = (graph: GraphTree): void => {
             const serializedRef = graph.ref.serialize()
@@ -17,17 +18,12 @@ export class DependencyGraphImpl implements DependencyGraph {
         this.graphs.forEach(graph => {
             traverseGraph(graph)
         })
-        const allProblems: DependencyGraphProblem.Problem[] = []
+        const allProblems: ScannerManager.DependencyProblem[] = []
         for (let [serializedRef, serializedVersions] of allVersionsByRef) {
             const uniqueVersions = _.uniq(serializedVersions)
             if (uniqueVersions.length > 1) {
                 const versions = uniqueVersions.map(v => { return Version.create(v) })
-                allProblems.push(<DependencyGraphProblem.MultipleVersions>{
-                    type: DependencyGraphProblem.Type.MULTIPLE_VERSIONS,
-                    ref: DependencyRef.deserialize(serializedRef),
-                    versions: versions,
-                    asString: (): string => { return `Dependency ${serializedRef} in multiple different versions: ${uniqueVersions.join(", ")}` }
-                })
+                allProblems.push(new ScannerManager.MultipleVersionsProblem(DependencyRef.deserialize(serializedRef), versions))
             }
         }
         return allProblems

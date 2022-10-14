@@ -1,9 +1,8 @@
 import 'jest'
-import _ from 'lodash'
 import { Version } from '../../../src/domain-model/version'
 import { ensureDefined } from '../../../src/utils/ensures'
 
-describe("Test parsing of released version", () => {
+describe("Version tests", () => {
     it("Empty version fails", async () => {
         let version = Version.parse("")
         expect(version).toBeNull
@@ -26,8 +25,11 @@ describe("Test parsing of released version", () => {
         let version = Version.parse("1.a.3")
         expect(version).toBeNull
     })
-})
-describe("Test version compare", () => {
+    it("Version with segments of 1000+", async () => {
+        let version = Version.parse("1001.2002.3003")
+        expect(version?.segments).toEqual([1001, 2002, 3003])
+    })
+
     it("Same version is equal", async () => {
         let version = ensureDefined(Version.parse("1.0.0"), "Should be defined")
         expect(version?.compare(version)).toBe(0)
@@ -55,5 +57,7 @@ describe("Test version compare", () => {
         expect(version1.compare(version2)).toBeLessThan(0)
         expect(version2.compare(version1)).toBeGreaterThan(0)
     })
+
+
 
 })

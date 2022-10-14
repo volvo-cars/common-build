@@ -5,10 +5,10 @@ import { RepositorySource } from '../../../../../src/domain-model/repository-mod
 import { DependencyRef } from "../../../../../src/domain-model/system-config/dependency-ref"
 import { ServiceConfig } from '../../../../../src/domain-model/system-config/service-config'
 import { Version } from "../../../../../src/domain-model/version"
-import { DependencyProvider } from '../../../../../src/repositories/scanner/dependency-provider'
+import { DependencyLookup } from '../../../../../src/repositories/scanner/dependency-lookup'
 import { LabelCriteria } from "../../../../../src/repositories/scanner/label-criteria"
 import { GoogleRepoScannerProvider } from "../../../../../src/repositories/scanner/providers/google-repo-scanner-provider"
-import { Dependency } from '../../../../../src/repositories/scanner/scanner-provider'
+import { Scanner } from '../../../../../src/repositories/scanner/scanner'
 import { MockRepositoryAccessFactory } from "../../../../helpers/mock-repository-access-factory"
 import { DEFAULT_XML } from '../../../../helpers/test-data'
 
@@ -32,8 +32,8 @@ describe("Test DefaultXml provider", () => {
 
     it("Make sure order is kept", async () => {
         const provider = new GoogleRepoScannerProvider(repositoryAccess, sources)
-        const result = await provider.scan(fakeSource, dummySha, <DependencyProvider>{
-            getVersion: (ref: DependencyRef.Ref): Promise<Version> => {
+        const result = await provider.scan(fakeSource, dummySha, <DependencyLookup.Provider>{
+            getVersion: (ref: DependencyRef.Ref, current: Version): Promise<Version> => {
                 if (ref instanceof DependencyRef.GitRef) {
                     if (ref.source.path === "playground/cynosure/cynosure_a") {
                         expect(ref.source.id).toBe("csp-gerrit")
@@ -51,14 +51,14 @@ describe("Test DefaultXml provider", () => {
                 return Promise.reject(new Error(`Could not find version for ${ref}`))
             }
         }, LabelCriteria.includeAll())
-        expect(result.updates.length).toBe(3)
-        result.updates.forEach(update => {
+        expect(result.dependencyUpdates.length).toBe(3)
+        result.dependencyUpdates.forEach(update => {
             console.log(update.label, update.path, update.content)
         })
 
         expect(result.allDependencies.length).toBe(3)
-        const updateA = result.updates.find(update => { return update.label === "a" })
-        const updateB = result.updates.find(update => { return update.label === "b" })
+        const updateA = result.dependencyUpdates.find(update => { return update.label === "a" })
+        const updateB = result.dependencyUpdates.find(update => { return update.label === "b" })
         expect(updateA).toBeDefined()
         expect(updateA!.content.indexOf("v1.1.0")).toBeGreaterThan(0)
         expect(updateA!.content.indexOf("v2.0.0")).toBeGreaterThan(0)
@@ -71,24 +71,24 @@ describe("Test DefaultXml provider", () => {
 
     it("Extract dependencies", async () => {
         const provider = new GoogleRepoScannerProvider(repositoryAccess, sources)
-        const dependencies = await provider.dependencies(fakeSource, dummySha)
+        const dependencies = await provider.getDependencies(fakeSource, dummySha)
         expect(dependencies.length).toBe(3)
         expect(dependencies).toEqual([
-            new Dependency(
+            new Scanner.Dependency(
                 new DependencyRef.GitRef(RepositorySource.createFromObject({
                     "id": "csp-gerrit",
                     "path": "playground/cynosure/cynosure_a"
                 })),
                 Version.create("1.0.0")
             ),
-            new Dependency(
+            new Scanner.Dependency(
                 new DependencyRef.GitRef(RepositorySource.createFromObject({
                     "id": "csp-gerrit",
                     "path": "playground/cynosure/cynosure_b"
                 })),
                 Version.create("2.0.0")
             ),
-            new Dependency(
+            new Scanner.Dependency(
                 new DependencyRef.GitRef(RepositorySource.createFromObject({
                     "id": "gitlab",
                     "path": "repo/flash-tools"

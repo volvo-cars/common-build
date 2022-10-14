@@ -1,13 +1,14 @@
 import { JobRef } from "../../domain-model/job-ref/job-ref"
-import { Refs } from "../../domain-model/refs"
 import { RepositorySource } from "../../domain-model/repository-model/repository-source"
 
 export namespace JobExecutor {
+    export type LogLevel = "info" | "warning"
     export interface Listener {
         onJobStarted(key: Key): void
         onJobFailure(key: Key): void
         onJobSuccess(key: Key): void
         onJobAborted(key: Key): void
+        onJobLog(key: Key, message: string, level: LogLevel): void
         onJobError(key: Key): void
     }
 

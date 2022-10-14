@@ -20,7 +20,7 @@ export class DependencyMapUtils {
         return m
     }
 
-    static merge(maps: [Map<DependencyRef.Ref, Version[]>]): Map<DependencyRef.Ref, Version[]> {
+    static merge(...maps: Map<DependencyRef.Ref, Version[]>[]): Map<DependencyRef.Ref, Version[]> {
         const serializedMap = new Map<string, string[]>()
         maps.forEach(map => {
             map.forEach((versions, ref) => {

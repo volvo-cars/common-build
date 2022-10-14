@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Button, ButtonGroup, Col, Row } from "react-bootstrap";
+import { Button, ButtonGroup, Col, Row, Table } from "react-bootstrap";
 import { FaRegEdit as EditIcon, FaTrash as DeleteIcon } from 'react-icons/fa';
 import { RepositoryConfig } from "../../domain-model/system-config/repository-config";
 import { CtrlSelect } from "../../forms/ctrl-select";
@@ -70,20 +70,33 @@ export const BuildAutomationEdit = ({ automation, onChange }: Props) => {
                             Action by label
                         </Col>
                         <Col xs={9}>
-                            {automation.labels.map(l => {
-                                return (
-                                    <Row key={l.id} className="pb-2">
-                                        <Col xs={4}>{l.id}</Col>
-                                        <Col xs={3}>{l.action}</Col>
-                                        <Col xs={5}>
-                                            <ButtonGroup className="float-right">
-                                                <EditIcon style={Styles.Icon} className="me-2" onClick={(e) => { setEditLabel({ label: l.id, action: l.action }) }} />
-                                                <DeleteIcon style={Styles.Icon} onClick={(e) => { onDeleteLabel(l.id) }} />
-                                            </ButtonGroup>
-                                        </Col>
-                                    </Row>
-                                )
-                            })}
+                            {automation.labels.length > 0 &&
+                                <Table striped={true}>
+                                    <thead>
+                                        <tr>
+                                            <th>label</th>
+                                            <th>action</th>
+                                            <th></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {automation.labels.map(l => {
+                                            return (
+                                                <tr>
+                                                    <td>{l.id}</td>
+                                                    <td>{l.action}</td>
+                                                    <td>
+                                                        <ButtonGroup className="float-right">
+                                                            <EditIcon style={Styles.Icon} className="me-2" onClick={(e) => { setEditLabel({ label: l.id, action: l.action }) }} />
+                                                            <DeleteIcon style={Styles.Icon} onClick={(e) => { onDeleteLabel(l.id) }} />
+                                                        </ButtonGroup>
+                                                    </td>
+                                                </tr>
+                                            )
+                                        })}
+                                    </tbody>
+                                </Table>
+                            }
                             {automation.labels.length === 0 &&
                                 <div>No label action defined yet.</div>
                             }
