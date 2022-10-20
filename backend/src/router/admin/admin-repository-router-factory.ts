@@ -174,22 +174,35 @@ export class AdminRepositoryRouterFactory implements RouterFactory {
                             const updates = await access.getUpdates(source.path)
                             const existing = updates.find(u => { return u.labels.includes(label) && u.target === mainBranch.name })
                             if (existing) {
-                                await access.updateUpdate(source.path, existing.id, ...contents)
+                                await access.updateUpdate(source.path, existing.id, ...contents).then(updated => {
+                                    logger.debug(`Updated existing update ${updated} ${existing} for ${source} with new content: ${contents.map(c => { return c.path })}`)
+                                    return Promise.resolve()
+                                })
                             } else {
-                                await access.createUpdate(source.path, new Refs.BranchRef(mainBranch.name), [label], ...contents)
+                                await access.createUpdate(source.path, new Refs.BranchRef(mainBranch.name), [label], ...contents).then(updateId => {
+                                    logger.debug(`Created new update ${updateId} for ${source} with new content: ${contents.map(c => { return c.path })}`)
+                                    return Promise.resolve()
+                                })
                             }
                             ctx.response.body = `Updated ${contents.map(c => { return c.path }).join(", ")} in Change`
                             ctx.response.status = HttpStatusCodes.CREATED
                         } else {
+                            logger.warn(`Could not create update for tar-file. No content in tar. ${source}`)
                             ctx.response.body = `Tar-file did not contain any entries.`
                             ctx.response.status = HttpStatusCodes.BAD_REQUEST
                         }
                     } catch (e) {
+                        logger.warn(`Problem with processing file: ${e} ${source}`)
                         ctx.response.body = `Problem with processing file: ${e}`
                         ctx.response.status = HttpStatusCodes.BAD_REQUEST
                     }
+                }).catch(e => {
+                    logger.error(`Could not proceed with tar-file for ${source}: ${e}`)
+                    ctx.response.body = `Problem with processing file: ${e}`
+                    ctx.response.status = HttpStatusCodes.BAD_REQUEST
                 })
             } else {
+                logger.error(`Bad request: Missing storage, id or label.`)
                 ctx.response.status = HttpStatusCodes.BAD_REQUEST
                 ctx.response.body = `Missing parameter "storage", "id" or "label"`
             }

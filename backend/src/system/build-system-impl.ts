@@ -155,10 +155,12 @@ export class BuildSystemImpl implements BuildSystem.Service, Queue.Listener, Job
                                         this.buildLogService.add(`Merged to target branch \`${updatedBranch.ref.name}\` Post-process action \`${action}\`. Continued [log](${branchJobRef.canonicalId})`, BuildLogEvents.Level.INFO, job.source, job.jobRef.canonicalId)
                                         this.buildLogService.add(`Merged update \`${ref.updateId}\`. Previous [log](${ref.canonicalId})`, BuildLogEvents.Level.INFO, job.source, branchJobRef.canonicalId)
                                         if (action === RepositoryConfig.Action.Release) {
-                                            this.release(job.source, updatedBranch, VersionType.MINOR).then(version => { }).catch(error => {
-                                                logger.error(`Could not release ${job}:${error}`)
-                                                this.buildLogService.add(`Could not release: ${error}`, BuildLogEvents.Level.ERROR, job.source, job.jobRef.canonicalId)
-                                            })
+                                            this.release(job.source, updatedBranch, VersionType.MINOR)
+                                                .then(version => { })
+                                                .catch(error => {
+                                                    logger.error(`Could not release ${job}:${error}`)
+                                                    this.buildLogService.add(`Could not release: ${error}`, BuildLogEvents.Level.ERROR, job.source, job.jobRef.canonicalId)
+                                                })
                                         }
                                     }).catch(error => {
                                         logger.error(`Could not merge ${job}:${error}`)
