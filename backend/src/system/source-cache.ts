@@ -15,12 +15,13 @@ export namespace SourceCache {
 
 
         ensureEntity(source: RepositorySource, entity: Refs.Entity, refSpec: RefSpec): Promise<void>
-        ensureDeleted(source: RepositorySource, ref: Refs.EntityRef, refSpec: RefSpec): Promise<void>
+        ensureDeleted(source: RepositorySource, ref: Refs.EntityRef): Promise<void>
 
         getEntities(source: RepositorySource): Promise<Refs.Entity[]>
         registerListener(listener: Listener): void
         getCommits(source: RepositorySource, to: Refs.Ref, from: Refs.Ref | undefined, maxCount: number): Promise<GitCommit[]>
         fetchAllDefaults(source: RepositorySource): Promise<void>
+        prune(source: RepositorySource): Promise<void>
 
     }
 

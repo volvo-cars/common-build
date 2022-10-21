@@ -9,6 +9,7 @@ export class SourceCacheImpl implements SourceCache.Service {
 
     constructor(private localGitFactory: LocalGitFactory) { }
 
+
     fetchAllDefaults(source: RepositorySource): Promise<void> {
         return this.localGitFactory.execute(source, LocalGitCommands.FetchDefaultRemotes.INSTANCE, LocalGitLoadMode.CACHED).then(() => {
             return this.fireListeners(source)
@@ -17,27 +18,33 @@ export class SourceCacheImpl implements SourceCache.Service {
 
     ensureRef(source: RepositorySource, ref: Refs.Ref, refSpec: SourceCache.RefSpec): Promise<void> {
         return this.localGitFactory.execute(source, new LocalGitCommands.MacroEnsureRefExists(ref, new LocalGitCommands.RefSpec(refSpec.pattern)), LocalGitLoadMode.CACHED).then(result => {
-            return this.handleEnsureResult(source, result, ref, refSpec)
+            return this.handleEnsureResult(source, result, ref)
         })
     }
     ensureEntity(source: RepositorySource, entity: Refs.Entity, refSpec: SourceCache.RefSpec): Promise<void> {
         return this.localGitFactory.execute(source, new LocalGitCommands.MacroEnsureEntityExists(entity, new LocalGitCommands.RefSpec(refSpec.pattern)), LocalGitLoadMode.CACHED).then(result => {
-            return this.handleEnsureResult(source, result, entity, refSpec)
+            return this.handleEnsureResult(source, result, entity)
         })
     }
-    ensureDeleted(source: RepositorySource, ref: Refs.EntityRef, refSpec: SourceCache.RefSpec): Promise<void> {
-        return this.localGitFactory.execute(source, new LocalGitCommands.MacroEnsureRefDeleted(ref, new LocalGitCommands.RefSpec(refSpec.pattern)), LocalGitLoadMode.CACHED).then(result => {
-            return this.handleEnsureResult(source, result, ref, refSpec)
+    ensureDeleted(source: RepositorySource, ref: Refs.EntityRef): Promise<void> {
+        return this.localGitFactory.execute(source, new LocalGitCommands.MacroEnsureRefDeleted(ref), LocalGitLoadMode.CACHED).then(result => {
+            return this.handleEnsureResult(source, result, ref)
         })
     }
 
-    private handleEnsureResult(source: RepositorySource, result: LocalGitCommands.EnsureResult, entity: any, refSpec: SourceCache.RefSpec): Promise<void> {
+    prune(source: RepositorySource): Promise<void> {
+        return this.localGitFactory.execute(source, LocalGitCommands.FetchPrune.INSTANCE, LocalGitLoadMode.CACHED).then()
+    }
+
+
+
+    private handleEnsureResult(source: RepositorySource, result: LocalGitCommands.EnsureResult, entity: any): Promise<void> {
         if (result === LocalGitCommands.EnsureResult.NO_ACTION) {
             return Promise.resolve()
         } else if (result === LocalGitCommands.EnsureResult.UPDATED) {
             return this.fireListeners(source)
         } else if (result === LocalGitCommands.EnsureResult.NOT_FOUND) {
-            return Promise.reject(new SourceCache.EnsureFailedError(`Could not load ${entity} from ${refSpec}.`))
+            return Promise.reject(new SourceCache.EnsureFailedError(`Could not load ${entity}.`))
         } else {
             return Promise.reject(new SourceCache.EnsureFailedError(`Unknown EnsureResult ${result}`))
         }

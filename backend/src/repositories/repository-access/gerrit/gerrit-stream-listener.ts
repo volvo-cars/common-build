@@ -132,10 +132,14 @@ export class GerritStreamListener implements ShutdownManager.Service {
                                                     }
                                                 }
                                             }
-                                        } else if (type === Events.TypeChangeAbandoned) {
-                                            const changeAbandoned = <Events.ChangeAbandonedEvent>json
-                                            if (this.isProjectActive(changeAbandoned.project)) {
-                                                logger.debug(`Abandon-Change event not implemented.`)
+                                        } else if (type === Events.TypeChangeMerged) {
+                                            const event = <Events.ChangeMergedEvent>json
+                                            if (this.isProjectActive(event.project)) {
+                                                const source = new RepositorySource(
+                                                    this.listenerConfig.config.id,
+                                                    event.project
+                                                )
+                                                receiver.onPrune(source)
                                             }
                                         }
                                     }

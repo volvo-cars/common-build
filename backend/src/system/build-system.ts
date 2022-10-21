@@ -18,6 +18,7 @@ export namespace BuildSystem {
         onUpdate(update: Update, message: string, error?: "error"): Promise<void>
         onPush(source: RepositorySource, entity: Refs.Entity): Promise<void>
         onDelete(source: RepositorySource, ref: Refs.EntityRef): Promise<void>
+        onPrune(source: RepositorySource): Promise<void>
     }
 }
 

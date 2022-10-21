@@ -57,6 +57,7 @@ export class BuildSystemImpl implements BuildSystem.Service, Queue.Listener, Job
         this.startJobsFromQueue()
     }
 
+
     onJobLog(job: JobExecutor.Key, message: string, level: JobExecutor.LogLevel): void {
         const logLevel = level === "warning" ? BuildLogEvents.Level.WARNING : BuildLogEvents.Level.INFO
         this.buildLogService.add(message, logLevel, job.source, job.jobRef.canonicalId)
@@ -338,10 +339,18 @@ export class BuildSystemImpl implements BuildSystem.Service, Queue.Listener, Job
     onDelete(source: RepositorySource, ref: Refs.EntityRef): Promise<void> {
         return this.activeSystem.isActive(source).then(isActive => {
             if (isActive) {
-                return this.sourceCache.ensureDeleted(source, ref, ref.refSpec)
+                return this.sourceCache.ensureDeleted(source, ref)
             } else {
                 logger.debug(`Skip processing delete: ${source}/${ref}. Repository not active in ${this.activeSystem.systemId}`)
                 return Promise.resolve()
+            }
+        })
+    }
+
+    onPrune(source: RepositorySource): Promise<void> {
+        return this.activeSystem.isActive(source).then(isActive => {
+            if (isActive) {
+                return this.sourceCache.prune(source)
             }
         })
     }

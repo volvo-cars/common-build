@@ -4,7 +4,7 @@ export namespace Events {
     export const TypeRefUpdated: string = "ref-updated"
     export const TypePatchSetCreated: string = "patchset-created"
     export const TypeChangeAbandoned: string = "change-abandoned"
-
+    export const TypeChangeMerged: string = "change-merged"
     export type BaseEvent = {
         type: string
     }
@@ -48,6 +48,13 @@ export namespace Events {
     }
 
     export type ChangeAbandonedEvent = BaseEvent & {
+        project: string,
+        refName: string,
+        change: Change
+
+    }
+
+    export type ChangeMergedEvent = BaseEvent & {
         project: string,
         refName: string,
         change: Change

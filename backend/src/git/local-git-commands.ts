@@ -1,6 +1,6 @@
 import fs from 'fs';
 import _, { random } from 'lodash';
-import { Options, SimpleGit, SimpleGitTaskCallback, TaskOptions } from "simple-git";
+import { SimpleGit } from "simple-git";
 import { Refs } from "../domain-model/refs";
 import { createLogger, loggerName } from "../logging/logging-factory";
 import { Duration } from '../task-queue/time';
@@ -50,12 +50,15 @@ export namespace LocalGitCommands {
     }
 
     export class FetchPrune implements GitFunction<void> {
+        static readonly INSTANCE = new FetchPrune()
         public readonly description
-        constructor(private refspec: RefSpec) {
-            this.description = `Prune branches and tags for ${refspec}`
+        constructor() {
+            this.description = `Prune branches and tags`
         }
         execute(git: SimpleGit, context: GitOpContext): Promise<void> {
-            return execRawGit(git, context, ["fetch", "origin", "--prune", "--prune-tags", `--refmap='${this.refspec.spec}'`]).then()
+            return git.fetch("origin", { "--prune": null, "--prune-tags": null }).then(fetchResult => {
+                // console.log(fetchResult)
+            })
         }
     }
 
@@ -127,8 +130,8 @@ export namespace LocalGitCommands {
 
     export class MacroEnsureRefDeleted implements GitFunction<EnsureResult> {
         readonly description: string
-        constructor(private ref: Refs.Ref, private refspec: RefSpec) {
-            this.description = `Ensure ${ref} is deleted (${refspec})`
+        constructor(private ref: Refs.Ref) {
+            this.description = `Ensure ${ref} is deleted`
         }
         execute(git: SimpleGit, context: GitOpContext): Promise<EnsureResult> {
             const execute = (retriesLeft: number): Promise<EnsureResult> => {
@@ -138,7 +141,7 @@ export namespace LocalGitCommands {
                             return retriesLeft === EnsureConstants.RETRY_COUNT ? EnsureResult.NO_ACTION : EnsureResult.UPDATED
                         } else {
                             return PromiseUtils.waitPromise(EnsureConstants.RETRY_WAIT).then(() => {
-                                return new FetchPrune(this.refspec).execute(git, context).then(() => {
+                                return FetchPrune.INSTANCE.execute(git, context).then(() => {
                                     return execute(retriesLeft - 1)
                                 })
                             })

@@ -7,6 +7,9 @@ export class MockSourceCache implements SourceCache.Service {
     private listeners: SourceCache.Listener[] = []
     private entities: Map<RepositorySource, Refs.Entity[]> = new Map()
     constructor() { }
+    prune(source: RepositorySource): Promise<void> {
+        throw new Error("Method not implemented.");
+    }
 
     fetchAllDefaults(source: RepositorySource): Promise<void> {
         throw new Error("Method not implemented.");
@@ -18,7 +21,7 @@ export class MockSourceCache implements SourceCache.Service {
     ensureEntity(source: RepositorySource, entity: Refs.Entity, refSpec: SourceCache.RefSpec): Promise<void> {
         throw new Error("Method not implemented.");
     }
-    ensureDeleted(source: RepositorySource, ref: Refs.EntityRef, refSpec: SourceCache.RefSpec): Promise<void> {
+    ensureDeleted(source: RepositorySource, ref: Refs.EntityRef): Promise<void> {
         throw new Error("Method not implemented.");
     }
 
