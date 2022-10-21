@@ -16,10 +16,9 @@ export class DependencyStoragImpl implements DependencyStorage {
             return this.redisFactory.get().then(async client => {
                 let multi = client.multi()
                 refs.forEach(ref => {
-                    multi = multi
-                        .smembers(this.refKey(ref.serialize()))
+                    multi.smembers(this.refKey(ref.serialize()))
                 })
-                const allSerializedSources = _.uniq(<string[]>_.flatten((await RedisUtils.executeMulti(multi))))
+                const allSerializedSources = _.uniq(<string[]>(await RedisUtils.executeMulti(multi)).flat())
                 return allSerializedSources.map(string => {
                     return RepositorySource.deserialize(string)
                 })
@@ -29,50 +28,33 @@ export class DependencyStoragImpl implements DependencyStorage {
         }
     }
     update(source: RepositorySource, ...refs: DependencyRef.Ref[]): Promise<void> {
-        logger.debug(`Add dependency listeners for ${source}: ${refs.join(",")}`)
+        logger.debug(`Add dependency listeners for ${source}: [${refs.join(",")}]`)
         return this.redisFactory.get().then(async client => {
+            const sourceKey = this.sourceKey(source)
             const newSerialized = refs.map(ref => { return ref.serialize() })
-            const existingSerialized = (await client.smembers(this.sourceKey(source))) || []
+            const existingSerialized = (await client.smembers(sourceKey)) || []
             const toAdd = _.difference(newSerialized, existingSerialized)
             const toRemove = _.difference(existingSerialized, newSerialized)
-            const sourceKey = this.sourceKey(source)
             let multi = client.multi()
+            multi.del(sourceKey)
+            if (newSerialized.length) {
+                multi.sadd(sourceKey, ...toAdd)
+            }
             const serializedSource = source.serialize()
-            if (toAdd.length) {
-                multi = multi
-                    .sadd(sourceKey, ...toAdd)
-                toAdd.forEach(serializedRef => {
-                    multi = multi.sadd(this.refKey(serializedRef), serializedSource)
-                })
-
-            }
-            if (toRemove.length) {
-                multi = multi
-                    .srem(sourceKey, ...toAdd)
-                toAdd.forEach(serializedRef => {
-                    multi = multi.srem(this.refKey(serializedRef), serializedSource)
-                })
-            }
-            multi = multi.sadd(this.sourceKnownKey(), serializedSource)
+            toAdd.forEach(serializedRef => {
+                multi.sadd(this.refKey(serializedRef), serializedSource)
+            })
+            toRemove.forEach(serializedRef => {
+                multi.srem(this.refKey(serializedRef), serializedSource)
+            })
             return RedisUtils.executeMulti(multi).then(_ => { return })
         })
     }
 
-    isKnown(...sources: RepositorySource[]): Promise<boolean[]> {
-        return this.redisFactory.get().then(client => {
-            return client.smismember(this.sourceKnownKey(), ...(sources.map(s => { return s.serialize() }))).then(results => {
-                return results.map(r => { return r > 0 })
-            })
-        })
-    }
-
-
     private sourceKey(source: RepositorySource): string {
         return `dependencies-source:${source.id}:${source.path}`
     }
-    private sourceKnownKey(): string {
-        return `dependencies-source-known`
-    }
+
     private refKey(serializedRef: string): string {
         return `dependencies-refs:${serializedRef}`
     }

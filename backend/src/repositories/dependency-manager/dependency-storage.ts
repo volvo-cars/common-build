@@ -7,6 +7,5 @@ import { RepositorySource } from "../../domain-model/repository-model/repository
 export interface DependencyStorage {
     lookup(...refs: DependencyRef.Ref[]): Promise<RepositorySource[]>
     update(source: RepositorySource, ...dependencies: DependencyRef.Ref[]): Promise<void>
-    isKnown(...sources: RepositorySource[]): Promise<boolean[]>
 }
 
