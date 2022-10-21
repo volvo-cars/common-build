@@ -38,7 +38,7 @@ export class DependencyStoragImpl implements DependencyStorage {
             let multi = client.multi()
             multi.del(sourceKey)
             if (newSerialized.length) {
-                multi.sadd(sourceKey, ...toAdd)
+                multi.sadd(sourceKey, ...newSerialized)
             }
             const serializedSource = source.serialize()
             toAdd.forEach(serializedRef => {

@@ -16,23 +16,9 @@ describe("Testing raw-model repository", () => {
         return redisFactory.shutdown()
     })
 
-    const equals = (c1: DependencyRef.Ref[], c2: DependencyRef.Ref[]): boolean => {
-        if (c1.length === c2.length) {
-            const c1ser = c1.map(c => { return c.serialize() }).sort()
-            const c2ser = c2.map(c => { return c.serialize() }).sort()
-            return _.isEqual(c1ser, c2ser)
-        } else {
-            return false
-        }
-    }
-
-    const sortRefs = (refs: DependencyRef.Ref[]): DependencyRef.Ref[] => {
-        return refs.map(c => { return c.serialize() }).sort().map(c => { return DependencyRef.deserialize(c) })
-    }
     const sortSources = (sources: RepositorySource[]): RepositorySource[] => {
         return sources.map(c => { return c.serialize() }).sort().map(c => { return RepositorySource.deserialize(c) })
     }
-
 
     it("Add source dependencies for source. Do reverse lookup single", async () => {
         const service = new DependencyStoragImpl(redisFactory)
@@ -85,6 +71,27 @@ describe("Testing raw-model repository", () => {
         expect(sortSources(await service.lookup(refC, refD))).toEqual(sortSources([source1, source4]))
         expect(sortSources(await service.lookup(refD))).toEqual(sortSources([source4]))
 
+    })
+
+    it("Real bug recreation", async () => {
+
+        const service = new DependencyStoragImpl(redisFactory)
+
+
+        const source1 = new RepositorySource("csp-gerrit", "playground/cynosure_c")
+        const source2 = new RepositorySource("csp-gerrit", "playground/cynosure_a")
+        const source3 = new RepositorySource("csp-gerrit-qa", "playground/test_cb")
+
+        const ref2 = new DependencyRef.GitRef(source2)
+        const ref3 = new DependencyRef.GitRef(source3)
+
+        await service.update(source1, ref2, ref3)
+
+        expect(sortSources(await service.lookup(ref2))).toEqual(sortSources([source1]))
+        expect(sortSources(await service.lookup(ref3))).toEqual(sortSources([source1]))
+        expect(sortSources(await service.lookup(ref2, ref3))).toEqual(sortSources([source1]))
 
     })
+
+
 })

@@ -287,6 +287,8 @@ export class BuildSystemImpl implements BuildSystem.Service, Queue.Listener, Job
                     return Promise.resolve()
                 }
             })
+        }).catch(e => {
+            logger.error(`Could not ensure ref: ${update}: ${e}`)
         })
     }
 
@@ -294,46 +296,58 @@ export class BuildSystemImpl implements BuildSystem.Service, Queue.Listener, Job
 
         console.log(`Received push: ${source} ${entity}`)
 
-        const sourceCacheOps = entity.ref instanceof Refs.BranchRef ? this.sourceCache.ensureEntity(source, entity, entity.ref.refSpec) : this.sourceCache.ensureRef(source, entity.ref, entity.ref.refSpec)
-        sourceCacheOps.then(() => {
-            const ref = entity.ref
-            const sha = entity.sha
-            return this.getBuildConfigIfActive(source, sha).then(buildConfig => {
-                if (buildConfig) {
-                    if (buildConfig instanceof BuildConfig.Config) {
-                        const normalizedRef = NormalizedModelUtil.normalize(ref)
-                        if (normalizedRef) {
-                            return this.scannerManager.registerDependencies(source).then(async () => {
-                                if (normalizedRef instanceof NormalizedModel.MainBranchRef) {
-                                    const hasBuildYml = (await this.systemFilesAccess.getBuildConfig(source, sha)) ? true : false
-                                    if (hasBuildYml) {
-                                        this.activeRepositories.addActiveRepositories(source)
-                                    } else {
-                                        this.activeRepositories.removeActiveRepositories(source)
-                                    }
-                                } else if (normalizedRef instanceof NormalizedModel.ReleaseTagRef) {
-                                    logger.info(`Reveived release: ${source}/${ref}`)
-                                    return this.publisherManager.publications(source, ref).then(publications => {
-                                        const releasePublications = [new DependencyRef.GitRef(source), publications].flat()
-                                        this.dependencyLookupCache.invalidate(...releasePublications).then(() => {
-                                            return this.scannerManager.processByReferences(...releasePublications)
+        const command = () => Promise.resolve().then(() => {
+            const sourceCacheOps = entity.ref instanceof Refs.BranchRef ? this.sourceCache.ensureEntity(source, entity, entity.ref.refSpec) : this.sourceCache.ensureRef(source, entity.ref, entity.ref.refSpec)
+            sourceCacheOps.then(() => {
+                const ref = entity.ref
+                const sha = entity.sha
+                return this.getBuildConfigIfActive(source, sha).then(buildConfig => {
+                    if (buildConfig) {
+                        if (buildConfig instanceof BuildConfig.Config) {
+                            const normalizedRef = NormalizedModelUtil.normalize(ref)
+                            if (normalizedRef) {
+                                return this.scannerManager.registerDependencies(source).then(async () => {
+                                    if (normalizedRef instanceof NormalizedModel.MainBranchRef) {
+                                        const hasBuildYml = (await this.systemFilesAccess.getBuildConfig(source, sha)) ? true : false
+                                        if (hasBuildYml) {
+                                            this.activeRepositories.addActiveRepositories(source)
+                                        } else {
+                                            this.activeRepositories.removeActiveRepositories(source)
+                                        }
+                                    } else if (normalizedRef instanceof NormalizedModel.ReleaseTagRef) {
+                                        logger.info(`Reveived release: ${source}/${ref}`)
+                                        return this.publisherManager.publications(source, ref).then(publications => {
+                                            const releasePublications = [new DependencyRef.GitRef(source), publications].flat()
+                                            this.dependencyLookupCache.invalidate(...releasePublications).then(() => {
+                                                return this.scannerManager.processByReferences(...releasePublications)
+                                            })
                                         })
-                                    })
-                                }
-                            })
+                                    }
+                                })
+                            } else {
+                                return Promise.resolve()
+                            }
                         } else {
-                            return Promise.resolve()
+                            const buildConfigError = <Error>buildConfig
+                            logger.warn(`Could not parse build-config for ${source}/${sha}: ${buildConfigError}`)
                         }
                     } else {
-                        const buildConfigError = <Error>buildConfig
-                        logger.warn(`Could not parse build-config for ${source}/${sha}: ${buildConfigError}`)
+                        logger.debug(`Skip processing push: ${source}/${ref}. Repository not active in ${this.activeSystem.systemId}`)
+                        return Promise.resolve()
                     }
-                } else {
-                    logger.debug(`Skip processing push: ${source}/${ref}. Repository not active in ${this.activeSystem.systemId}`)
-                    return Promise.resolve()
-                }
+                })
             })
         })
+        command()
+            .catch(e => {
+                logger.error(`Could not ensure: ${entity} on ${source}: ${e}`)
+                return this.sourceCache.fetchAllDefaults(source).then(() => {
+                    return command()
+                })
+            }).catch(e => {
+                logger.error(`Could not ensure ref: ${entity} on ${source}. Tried fetchAll and retry still failure.`)
+
+            })
     }
 
     onDelete(source: RepositorySource, ref: Refs.EntityRef): Promise<void> {
@@ -344,6 +358,8 @@ export class BuildSystemImpl implements BuildSystem.Service, Queue.Listener, Job
                 logger.debug(`Skip processing delete: ${source}/${ref}. Repository not active in ${this.activeSystem.systemId}`)
                 return Promise.resolve()
             }
+        }).catch(e => {
+            logger.error(`Could not ensure deletion of ${ref} at ${source}`)
         })
     }
 
