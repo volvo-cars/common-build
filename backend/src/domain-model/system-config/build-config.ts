@@ -105,12 +105,19 @@ export namespace BuildConfig {
             @Expose()
             public labels: string | undefined
 
-            constructor(name: string, file: string, target: string | undefined, labels: string | undefined) {
+            @Expose()
+            @Type(() => String)
+            public secrets: Map<string, string> = new Map<string, string>() // Bug in transform. Can't define Map<,string,string>|undefined
+
+            constructor(name: string, file: string, target: string | undefined, labels: string | undefined, secrets?: Map<string, string>) {
                 super()
                 this.name = name
                 this.file = file
                 this.target = target
                 this.labels = labels
+                if (secrets) {
+                    this.secrets = secrets
+                }
             }
         };
     }

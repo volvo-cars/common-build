@@ -21,31 +21,41 @@ import { TestUtils } from '../../../helpers/test-utils'
 import { BuildConfig } from '../../../../src/domain-model/system-config/build-config'
 import { BuildYamlScannerProvider } from '../../../../src/repositories/scanner/providers/build-yaml-scanner-provider'
 import { ScannerImpl } from '../../../../src/repositories/scanner/scanner-impl'
+import { GoogleRepoScannerProvider } from '../../../../src/repositories/scanner/providers/google-repo-scanner-provider'
+import { ServiceConfig } from '../../../../src/domain-model/system-config/service-config'
 describe("Test DependenciesYaml provider", () => {
 
-    const dependenciesYml = fs.readFileSync(`${__dirname}/test-data/dependencies.yml`).toString()
-    const buildYml = fs.readFileSync(`${__dirname}/test-data/build.yml`).toString()
-    const repositoryAccessFactory = new MockRepositoryAccessFactory({ [DependenciesConfig.FILE_PATH]: dependenciesYml, [BuildConfig.FILE_PATH]: buildYml })
-    const systemFilesAccess = new SystemFilesAccessImpl(repositoryAccessFactory)
-    const fakeSource = new RepositorySource("a", "b")
+
 
     it("Test real yml file", async () => {
+
+        const dependenciesYml = fs.readFileSync(`${__dirname}/test-data/dependencies.yml`).toString()
+        const buildYml = fs.readFileSync(`${__dirname}/test-data/build.yml`).toString()
+        const defaultXml = fs.readFileSync(`${__dirname}/test-data/default.xml`).toString()
+        const repositoryAccessFactory = new MockRepositoryAccessFactory({ [DependenciesConfig.FILE_PATH]: dependenciesYml, [BuildConfig.FILE_PATH]: buildYml, "default.xml": defaultXml })
+        const systemFilesAccess = new SystemFilesAccessImpl(repositoryAccessFactory)
+        const fakeSource = new RepositorySource("a", "b")
+        const sourceServices: ServiceConfig.SourceService[] = [
+            new ServiceConfig.GerritSourceService("csp-gerrit", "csp-gerrit-ssh.volvocars.net", "csp-gerrit.volvocars.biz", undefined)
+        ]
+
         const dependenciesYmlProvider = new DependenciesYamlScannerProvider(systemFilesAccess)
         const buildYmlProvider = new BuildYamlScannerProvider(systemFilesAccess)
-        const scanner = new ScannerImpl([buildYmlProvider, dependenciesYmlProvider])
-        const dependenciesMap = await scanner.getDependencies(fakeSource, TestUtils.sha("0"))
-        console.dir(dependenciesMap, { depth: null })
+        const googleProvider = new GoogleRepoScannerProvider(repositoryAccessFactory, sourceServices)
 
+        const scanner = new ScannerImpl([buildYmlProvider, dependenciesYmlProvider, googleProvider])
+        const dependenciesMap = await scanner.getDependencies(fakeSource, TestUtils.sha("0"))
         const dependencies = Array.from(dependenciesMap.keys())
         console.dir(dependencies, { depth: null })
 
         const expectedDependencies = [
+            new DependencyRef.GitRef(new RepositorySource("csp-gerrit", "csp/test")),
             new DependencyRef.ArtifactRef("ara-artifactory.volvocars.biz", "ARTCSP-CI", "csp/nodes/sga"),
             new DependencyRef.ArtifactRef("ara-artifactory.volvocars.biz", "ARTCSP-CI", "csp/nodes/hi"),
             new DependencyRef.ArtifactRef("ara-artifactory.volvocars.biz", "ARTCSP-CI", "csp/nodes/hpa"),
             new DependencyRef.ArtifactRef("ara-artifactory.volvocars.biz", "ARTCSP-CI", "csp/nodes/lpa"),
-            new DependencyRef.ImageRef("artcsp-docker.ara-artifactory.volvocars.biz", "vcc/common-build-tools/rig-runner")
-
+            new DependencyRef.ImageRef("artcsp-docker.ara-artifactory.volvocars.biz", "vcc/common-build-tools/rig-runner"),
+            new DependencyRef.ImageRef("artcsp-docker.ara-artifactory.volvocars.biz", "vcc/common-build-tools/idrom")
         ]
 
         expectedDependencies.forEach(ed => {
@@ -59,5 +69,7 @@ describe("Test DependenciesYaml provider", () => {
             expect(found).toBeDefined()
         })
     })
+
+
 })
 

@@ -5,13 +5,16 @@ build:
     - type: compose
       nodes:
         rig_runner:
-          image: artcsp-docker.ara-artifactory.volvocars.biz/vcc/common-build-tools/rig-runner:0.1.0
+          image: artcsp-docker.ara-artifactory.volvocars.biz/vcc/common-build-tools/rig-runner:1.0.0
           labels: rig_runner
+        idrom:
+          image: artcsp-docker.ara-artifactory.volvocars.biz/vcc/common-build-tools/idrom:2.0.0
       secrets:
         hiluser: csp/common-build/hiluser
         hilpassword:  csp/common-build/hilpassword
       commands:
         - cmd: |
-            set -x
-            rig-runner --upload-images --dirs lpa sga hpa hi --flash-nodes lpa sga hpa hi --user=$(cat /run/secrets/hiluser) --password=$(cat /run/secrets/hilpassword)
-          node: rig_runner%          
+            cd config/idrom && mkdir out
+            idrom generate_and_verify --config-file generate_and_verify.yml
+            ls -al
+          node: idrom

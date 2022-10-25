@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+  <remote name="origin" fetch="ssh://csp-gerrit-ssh.volvocars.net/" review="https://csp-gerrit.volvocars.biz" />
+  <default remote="origin" sync-s="true" sync-j="4" sync-c="true" />
+  <project
+    path="test"
+    name="csp/test.git" revision="refs/tags/v1.0.0" />
+  <project
+    path="tools/installation_instructions"
+    name="csp/tools/installation_instructions.git" revision="master" />
+</manifest>
