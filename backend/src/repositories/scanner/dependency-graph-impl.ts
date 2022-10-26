@@ -19,11 +19,15 @@ export class DependencyGraphImpl implements ScannerManager.DependencyGraph {
             traverseGraph(graph)
         })
         const allProblems: ScannerManager.DependencyProblem[] = []
+        const commonBuildRef = new DependencyRef.ImageRef("artcsp-docker.ara-artifactory.volvocars.biz", "vcc/common-build-agent")
         for (let [serializedRef, serializedVersions] of allVersionsByRef) {
             const uniqueVersions = _.uniq(serializedVersions)
             if (uniqueVersions.length > 1) {
-                const versions = uniqueVersions.map(v => { return Version.create(v) })
-                allProblems.push(new ScannerManager.MultipleVersionsProblem(DependencyRef.deserialize(serializedRef), versions))
+                const ref = DependencyRef.deserialize(serializedRef)
+                if (!ref.equals(commonBuildRef)) {
+                    const versions = uniqueVersions.map(v => { return Version.create(v) })
+                    allProblems.push(new ScannerManager.MultipleVersionsProblem(ref, versions))
+                }
             }
         }
         return allProblems

@@ -102,7 +102,6 @@ export class BuildSystemImpl implements BuildSystem.Service, Queue.Listener, Job
                             logger.debug(`Fast-forward possible for ${ref} in ${source}. Continue build start.`)
                             const dependencyGraph = await this.scannerManager.getDependencyGraph(source, ref.sha)
                             const dependencyProblems = dependencyGraph.getProblems()
-
                             const dependencyTreeLog = [`***************** Dependency tree for ${source}/${ref}`]
                             dependencyGraph.traverse((ref: DependencyRef.Ref, version: Version, depth: number) => {
                                 dependencyTreeLog.push(`${_.repeat(" ", depth * 3)} ${ref.toString()}: ${version.asString()}`)
