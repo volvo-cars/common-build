@@ -15,7 +15,7 @@ describe("Test codec on domain", () => {
             ]
         )
         const build = new BuildConfig.Build([step])
-        const config = new BuildConfig.Config(build, "latest")
+        const config = new BuildConfig.Config("latest", 1, build)
 
         const encoded = Codec.toPlain(config)
         console.log("ENCODED")

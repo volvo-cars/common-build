@@ -1,9 +1,11 @@
 import fs from 'fs'
+import Koa from 'koa'
 import 'reflect-metadata'
-import yaml from 'yaml'
 import yargs from 'yargs'
+import { ActiveSystemImpl } from './active-system/active-system-impl'
 import { ArtifactoryFactoryImpl } from './artifact-storage/artifactory/artifactory-factory'
 import { ArtifactoryDockerRegistryFactoryImpl } from './artifact-storage/docker/artifactory-docker-registry-factory'
+import { BuildLogServiceImpl } from './buildlog/buildlog-impl'
 import { createConfig } from './config/config-factory'
 import { EnvValueSubstitutor } from './config/value-substitutors/env-value-substitutor'
 import { FileValueSubstitutor } from './config/value-substitutors/file-value-substitutor'
@@ -15,6 +17,8 @@ import { RepositorySource } from './domain-model/repository-model/repository-sou
 import { ServiceConfig } from './domain-model/system-config/service-config'
 import { LocalGitFactoryImpl } from './git/local-git-factory'
 import { createLogger } from './logging/logging-factory'
+import { RedisConfig, RedisFactoryImpl } from './redis/redis-factory'
+import { DependencyStoragImpl } from './repositories/dependency-manager/dependency-storage-impl'
 import { MajorApplicationServiceImpl } from './repositories/majors/major-application-service'
 import { MajorsServiceImpl } from './repositories/majors/majors-service'
 import { PublisherManagerImpl } from './repositories/publisher/publisher-manager'
@@ -23,36 +27,31 @@ import { GerritRepositoryAccess } from './repositories/repository-access/gerrit/
 import { GerritStreamListener, GerritStreamListenerConfig } from './repositories/repository-access/gerrit/gerrit-stream-listener'
 import { RepositoryAccessFactoryImpl } from './repositories/repository-access/repository-access-factory'
 import { RepositoryFactoryImpl } from './repositories/repository/repository-factory'
+import { DependencyLookupCacheImpl } from './repositories/scanner/dependency-lookup-cache-impl'
+import { DependencyLookupFactoryImpl } from './repositories/scanner/dependency-lookup-factory-impl'
 import { BuildYamlScannerProvider } from './repositories/scanner/providers/build-yaml-scanner-provider'
 import { DependenciesYamlScannerProvider } from './repositories/scanner/providers/dependencies-yaml-scanner-provider'
 import { GoogleRepoScannerProvider } from './repositories/scanner/providers/google-repo-scanner-provider'
 import { ScannerImpl } from './repositories/scanner/scanner-impl'
-import { SystemFilesAccessImpl } from './repositories/system-files-access'
+import { ScannerManagerImpl } from './repositories/scanner/scanner-manager-impl'
+import { SystemFilesAccessImpl } from './repositories/system-files-access-impl'
 import { AdminMajorsRouterFactory } from './router/admin/admin-majors-router-factory'
 import { AdminRepositoryRouterFactory } from './router/admin/admin-repository-router-factory'
 import { AdminRouterFactory } from './router/admin/admin-router-factory'
 import { RouterFactory } from './router/router-factory'
+import { KoaServiceWrapper } from './shutdown-manager/koa-service-wrapper'
+import { ShutdownManagerImpl } from './shutdown-manager/shutdown-manager-impl'
+import { BuildSystemImpl } from './system/build-system-impl'
+import { NodeId } from './system/node-id'
 import { createActiveRepositories } from './system/queue/active-repositories'
+import { SourceCacheImpl } from './system/source-cache-impl'
 import { SystemTime } from './system/time'
+import { TaskQueueFactoryImpl } from './task-queue/task-queue-factory-impl'
 import { ensureString } from './utils/ensures'
+import { Env } from './utils/env'
+import { StructuredYaml } from './utils/structured-yaml'
 import { VaultOptions, VaultServiceImpl } from './vault/vault-service'
 import { VaultUtils } from './vault/vault-utils'
-import Koa from 'koa'
-import { RedisConfig, RedisFactoryImpl } from './redis/redis-factory'
-import { Env } from './utils/env'
-import { NodeId } from './system/node-id'
-import { TaskQueueFactoryImpl } from './task-queue/task-queue-factory-impl'
-import { ShutdownManagerImpl } from './shutdown-manager/shutdown-manager-impl'
-import { KoaServiceWrapper } from './shutdown-manager/koa-service-wrapper'
-import { ActiveSystemImpl } from './active-system/active-system-impl'
-import { BuildLogServiceImpl } from './buildlog/buildlog-impl'
-import { BuildSystemImpl } from './system/build-system-impl'
-import { DependencyStoragImpl } from './repositories/dependency-manager/dependency-storage-impl'
-import { ScannerManagerImpl } from './repositories/scanner/scanner-manager-impl'
-import { DependencyLookupFactoryImpl } from './repositories/scanner/dependency-lookup-factory-impl'
-import { DependencyLookupCacheImpl } from './repositories/scanner/dependency-lookup-cache-impl'
-import { threadId } from 'worker_threads'
-import { SourceCacheImpl } from './system/source-cache-impl'
 const logger = createLogger("main")
 logger.info("Starting CommonBuild server...")
 
@@ -121,7 +120,7 @@ createConfig(args.config, [new VaultValueSubstitutor(vaultService), new FileValu
         if (fs.existsSync(devFileName)) {
             const devFile = fs.readFileSync(devFileName)
             console.log(`Processing dev-file: ${devFileName}`)
-            const repositories = <string[]>yaml.parse(devFile.toString())["repositories"]
+            const repositories = <string[]>StructuredYaml.parse(devFile.toString())["repositories"]
             preloadRepositories = repositories.map(line => {
                 const [gerrit, path] = line.split(":")
                 return new RepositorySource(gerrit, path)
@@ -167,7 +166,7 @@ createConfig(args.config, [new VaultValueSubstitutor(vaultService), new FileValu
     const dependencyLookupFactory = new DependencyLookupFactoryImpl(dependencyLookupCache, systemFilesAccess)
     const scannerManager = new ScannerManagerImpl(repositoryAccessFactory, repositoryFactory, activeRepositories, scanner, dependencyStorage, dependencyLookupFactory, redisFactory, artifactoryFactory, activeSystem, majorService, systemFilesAccess, sourceCache)
     let publisherManager = new PublisherManagerImpl(systemFilesAccess, artifactoryFactory, dockerRegistryFactory)
-    const buildSystem = new BuildSystemImpl(redisFactory, systemTime, cynosureJobExecutor, repositoryAccessFactory, repositoryFactory, activeRepositories, publisherManager, scannerManager, activeSystem, buildLogService, dependencyLookupCache, sourceCache)
+    const buildSystem = new BuildSystemImpl(redisFactory, systemTime, cynosureJobExecutor, repositoryAccessFactory, repositoryFactory, activeRepositories, publisherManager, scannerManager, activeSystem, buildLogService, dependencyLookupCache, sourceCache, systemFilesAccess)
 
     const routerFactories: RouterFactory[] = [
         new CynosureRouterFactory(buildSystem, redisFactory),

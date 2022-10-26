@@ -1,28 +1,18 @@
 import { describe, expect, it } from '@jest/globals'
-import { Version } from "../../../../src/domain-model/version"
-import { DependencyLookup } from '../../../../src/repositories/scanner/dependency-lookup'
 import { DependencyRef } from "../../../../src/domain-model/system-config/dependency-ref"
-import { LabelCriteria } from "../../../../src/repositories/scanner/label-criteria"
 import { DependenciesYamlScannerProvider } from '../../../../src/repositories/scanner/providers/dependencies-yaml-scanner-provider'
-import { SystemFilesAccessImpl } from '../../../../src/repositories/system-files-access'
+import { SystemFilesAccessImpl } from '../../../../src/repositories/system-files-access-impl'
 import { MockRepositoryAccessFactory } from "../../../helpers/mock-repository-access-factory"
-import { DEPENDENCIES_YAML } from '../../../helpers/test-data'
 
-import YAML from 'yaml'
-import { Refs } from '../../../../src/domain-model/refs'
-import _, { identity } from 'lodash'
-import { RepositorySource } from '../../../../src/domain-model/repository-model/repository-source'
-import { DependenciesConfig } from '../../../../src/domain-model/system-config/dependencies-config'
-import { Codec } from '../../../../src/domain-model/system-config/codec'
-import { ScannerManager } from '../../../../src/repositories/scanner/scanner-manager'
-import { Scanner } from '../../../../src/repositories/scanner/scanner'
 import fs from "fs"
-import { TestUtils } from '../../../helpers/test-utils'
+import { RepositorySource } from '../../../../src/domain-model/repository-model/repository-source'
 import { BuildConfig } from '../../../../src/domain-model/system-config/build-config'
-import { BuildYamlScannerProvider } from '../../../../src/repositories/scanner/providers/build-yaml-scanner-provider'
-import { ScannerImpl } from '../../../../src/repositories/scanner/scanner-impl'
-import { GoogleRepoScannerProvider } from '../../../../src/repositories/scanner/providers/google-repo-scanner-provider'
+import { DependenciesConfig } from '../../../../src/domain-model/system-config/dependencies-config'
 import { ServiceConfig } from '../../../../src/domain-model/system-config/service-config'
+import { BuildYamlScannerProvider } from '../../../../src/repositories/scanner/providers/build-yaml-scanner-provider'
+import { GoogleRepoScannerProvider } from '../../../../src/repositories/scanner/providers/google-repo-scanner-provider'
+import { ScannerImpl } from '../../../../src/repositories/scanner/scanner-impl'
+import { TestUtils } from '../../../helpers/test-utils'
 describe("Test DependenciesYaml provider", () => {
 
 

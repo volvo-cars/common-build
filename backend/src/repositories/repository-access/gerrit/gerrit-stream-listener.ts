@@ -100,8 +100,6 @@ export class GerritStreamListener implements ShutdownManager.Service {
                                                     } else {
                                                         logger.debug(`Ref not decoded: ${event.refUpdate.refName} ${source}`)
                                                     }
-                                                } else {
-                                                    logger.debug(`Not a known ref: ${event.refUpdate.refName}`)
                                                 }
                                             }
                                         } else if (type === Events.TypePatchSetCreated) {

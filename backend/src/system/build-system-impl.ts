@@ -18,7 +18,7 @@ import { VersionType } from "../repositories/repository/repository"
 import { RepositoryFactory } from "../repositories/repository/repository-factory"
 import { DependencyLookup } from '../repositories/scanner/dependency-lookup'
 import { ScannerManager } from "../repositories/scanner/scanner-manager"
-import { SystemFilesAccess, SystemFilesAccessImpl } from "../repositories/system-files-access"
+import { SystemFilesAccess } from "../repositories/system-files-access"
 import { BuildSystem, Update } from './build-system'
 import { JobExecutor } from './job-executor/job-executor'
 import { ActiveRepositories } from "./queue/active-repositories"
@@ -32,8 +32,6 @@ const logger = createLogger(loggerName(__filename))
 
 export class BuildSystemImpl implements BuildSystem.Service, Queue.Listener, JobExecutor.Listener, BuildSystem.UpdateReceiver {
     private queue: Queue.Service
-    private systemFilesAccess: SystemFilesAccess
-
     constructor(
         private redisFactory: RedisFactory,
         private time: TimeProvider,
@@ -47,9 +45,9 @@ export class BuildSystemImpl implements BuildSystem.Service, Queue.Listener, Job
         private buildLogService: BuildLog.Service,
         private dependencyLookupCache: DependencyLookup.Cache,
         private sourceCache: SourceCache.Service,
+        private systemFilesAccess: SystemFilesAccess
     ) {
         this.queue = new QueueImpl(this.redisFactory, this.time, this)
-        this.systemFilesAccess = new SystemFilesAccessImpl(repositoryAcccessFactory)
         jobExecutor.setListener(this)
         this.startJobsFromQueue()
     }

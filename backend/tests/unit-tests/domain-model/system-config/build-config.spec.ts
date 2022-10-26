@@ -5,6 +5,8 @@ import YAML from 'yaml'
 describe("Test Ref", () => {
     it("Test simple serializer", async () => {
         const config = new BuildConfig.Config(
+            "",
+            1,
             new BuildConfig.Build(
                 [new BuildConfig.BuildCompose.Step(
                     new Map([
@@ -44,6 +46,8 @@ describe("Test Ref", () => {
 
     it("One container build", async () => {
         const config = new BuildConfig.Config(
+            "",
+            1,
             new BuildConfig.Build(
                 [new BuildConfig.BuildCompose.Step(
                     new Map([
@@ -56,7 +60,14 @@ describe("Test Ref", () => {
                     [
                         new BuildConfig.BuildCompose.NodeCommand("cmake ..", "dev"),
                         new BuildConfig.BuildCompose.NodeCommand("make", "dev"),
-                    ])
+                    ]
+                ),
+                new BuildConfig.BuildDockerBuild.Step(
+                    "name",
+                    "file",
+                    "target",
+                    undefined,
+                )
                 ]
             )
         )
@@ -67,6 +78,7 @@ describe("Test Ref", () => {
         console.log("RECREATED")
         console.dir(recreated, { depth: null })
         expect(recreated.build.steps[0]).toBeInstanceOf(BuildConfig.BuildCompose.Step)
+        expect(recreated.build.steps[1]).toBeInstanceOf(BuildConfig.BuildDockerBuild.Step)
         console.log(YAML.stringify(instanceToPlain(config)))
         console.log(json)
 

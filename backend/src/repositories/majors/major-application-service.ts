@@ -3,7 +3,8 @@ import { RepositorySource } from "../../domain-model/repository-model/repository
 import { Majors } from "../../domain-model/system-config/majors";
 import { RepositoryAccessFactory } from "../repository-access/repository-access-factory";
 import { RepositoryFactory } from "../repository/repository-factory";
-import { SystemFilesAccess, SystemFilesAccessImpl } from "../system-files-access";
+import { SystemFilesAccess } from "../system-files-access";
+import { SystemFilesAccessImpl } from "../system-files-access-impl";
 export interface MajorApplicationService {
     applyMajors(value: Majors.Value, sources: RepositorySource[]): Promise<MajorApplicationResult.Result[]>
     applyMajor(value: Majors.Value, source: RepositorySource): Promise<MajorApplicationResult.Action>

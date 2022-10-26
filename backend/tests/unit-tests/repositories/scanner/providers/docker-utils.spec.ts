@@ -1,4 +1,3 @@
-import exp from "constants"
 import { DockerUtils } from "../../../../../src/repositories/scanner/providers/docker-utils"
 
 describe("RevisionUtil", () => {

@@ -12,7 +12,7 @@ import { LabelCriteria } from '../label-criteria';
 import { Scanner } from "../scanner";
 import { DockerUtils } from './docker-utils';
 const logger = createLogger(loggerName(__filename))
-
+export const cbToolLabel = "common-build-tool"
 export class BuildYamlScannerProvider implements Scanner.Provider {
     constructor(private systemFilesAccess: SystemFilesAccess) { }
 
@@ -56,7 +56,14 @@ export class BuildYamlScannerProvider implements Scanner.Provider {
                         return Promise.resolve([])
                     }
                 })).then(dependencies => {
-                    return dependencies.flat()
+                    const imageVersion = ImageVersionUtil.ImageVersion.parse(config?.toolImage)
+                    if (imageVersion) {
+                        const toolImageRef = new DependencyRef.ImageRef(imageVersion.registry, imageVersion.repository)
+                        const dependency = new Scanner.Dependency(toolImageRef, imageVersion.version)
+                        return [dependency, dependencies.flat()].flat()
+                    } else {
+                        return dependencies.flat()
+                    }
                 })
             } else {
                 return []
@@ -82,9 +89,10 @@ export class BuildYamlScannerProvider implements Scanner.Provider {
                         allLabels.push(splitAndFilter(labels))
                     }
                 })
+                allLabels.push([cbToolLabel]) // Hard coded - always present
 
                 const allDependencies: DependencyRef.Ref[] = []
-                const relevantLabels = labelCriteria.include(_.flatten(allLabels))
+                const relevantLabels = labelCriteria.include(allLabels.flat())
 
                 const allUpdates = _.flatten(await Promise.all(relevantLabels.map(async relevantLabel => {
                     const clonedConfig = _.cloneDeep(config)
@@ -151,8 +159,27 @@ export class BuildYamlScannerProvider implements Scanner.Provider {
                                 }
                             }))
                         }
-
                     })
+                    if (relevantLabel === cbToolLabel) {
+                        const imageVersion = ImageVersionUtil.ImageVersion.parse(clonedConfig.toolImage)
+                        if (imageVersion) {
+                            const toolImageRef = new DependencyRef.ImageRef(imageVersion.registry, imageVersion.repository)
+                            allDependencies.push(toolImageRef)
+                            replaces.push(new Promise<void>((resolve, reject) => {
+                                const dependencyRef = new DependencyRef.ImageRef(imageVersion.registry, imageVersion.repository)
+                                allDependencies.push(dependencyRef)
+                                dependencyProvider.getVersion(dependencyRef, imageVersion.version).then(newVersion => {
+                                    if (newVersion) {
+                                        if (newVersion.compare(imageVersion.version) !== 0) {
+                                            clonedConfig.toolImage = imageVersion.withVersion(newVersion).asString()
+                                            configFileChanges++
+                                        }
+                                    }
+                                    resolve()
+                                }).catch(e => { resolve(e) })
+                            }))
+                        }
+                    }
                     await Promise.all(replaces)
                     const dockerFileDependencies = <Scanner.DependencyUpdate[]>(await Promise.all(dockerFileReplaces)).filter(r => { return r ? true : false })
 

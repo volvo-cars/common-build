@@ -4,7 +4,7 @@ import { DependencyLookup } from '../../../../../src/repositories/scanner/depend
 import { DependencyRef } from "../../../../../src/domain-model/system-config/dependency-ref"
 import { LabelCriteria } from "../../../../../src/repositories/scanner/label-criteria"
 import { DependenciesYamlScannerProvider } from '../../../../../src/repositories/scanner/providers/dependencies-yaml-scanner-provider'
-import { SystemFilesAccessImpl } from '../../../../../src/repositories/system-files-access'
+import { SystemFilesAccessImpl } from '../../../../../src/repositories/system-files-access-impl'
 import { MockRepositoryAccessFactory } from "../../../../helpers/mock-repository-access-factory"
 import { DEPENDENCIES_YAML } from '../../../../helpers/test-data'
 
