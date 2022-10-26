@@ -31,10 +31,10 @@ export namespace LocalGitCommands {
     const execRawGit = (git: SimpleGit, context: GitOpContext, cmdLine: string[]): Promise<string> => {
         const cmd = `git ${cmdLine.join(" ")} (${context.source})`
         return git.raw(cmdLine).then(result => {
-            //     console.log(`${cmd} -> Success`)
+            // console.log(`${cmd} ${result} -> Success`)
             return result
         }).catch(e => {
-            //     console.log(`${cmd} -> Failure`)
+            //  console.log(`${cmd} ${e} -> Failure`)
             return Promise.reject(e)
         })
     }
@@ -100,12 +100,14 @@ export namespace LocalGitCommands {
         }
         execute(git: SimpleGit, context: GitOpContext): Promise<boolean> {
             const ref = this.ref
+            //      console.log(`Check exists ${ref.originRef}`)
             return execRawGit(git, context, ["cat-file", "-t", ref.originRef]).then(gitType => {
                 const cleanRef = gitType.trim()
+                //          console.log(`Clean ref: "${cleanRef}"`)
                 if (ref instanceof Refs.ShaRef) {
                     return cleanRef === "commit"
                 } else if (ref instanceof Refs.TagRef) {
-                    return cleanRef === "tag"
+                    return cleanRef === "tag" || cleanRef === "commit" //Needs both depending on annotated or not.
                 } else if (ref instanceof Refs.BranchRef) {
                     return cleanRef === "commit"
                 } else {

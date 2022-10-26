@@ -25,7 +25,7 @@ export class GerritStreamListener implements ShutdownManager.Service {
     public shutdownPriority = 10;
     private active: boolean = true
 
-    private validRefs = [/^refs\/heads\//, /^refs\/tags\//, /^refs\/config\//]
+    private validRefs = [/^refs\/heads\//, /^refs\/tags\//, /^refs\/meta\/config$/]
 
     constructor(private readonly listenerConfig: GerritStreamListenerConfig, private readonly changeCache: ChangeCache, private readonly limitedRepositories: string[] | undefined) {
         this.serviceName = `GerritStreamListener - ${listenerConfig.config.id}`
@@ -100,6 +100,8 @@ export class GerritStreamListener implements ShutdownManager.Service {
                                                     } else {
                                                         logger.debug(`Ref not decoded: ${event.refUpdate.refName} ${source}`)
                                                     }
+                                                } else {
+                                                    logger.debug(`Not a known ref: ${event.refUpdate.refName}`)
                                                 }
                                             }
                                         } else if (type === Events.TypePatchSetCreated) {

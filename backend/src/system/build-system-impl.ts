@@ -1,7 +1,6 @@
 import _ from 'lodash'
 import { ActiveSystem } from '../active-system/active-system'
 import { BuildLog } from '../buildlog/buildlog'
-import { SystemConfig } from "../config/system-config"
 import { BuildLogEvents } from '../domain-model/buildlog-events/buildlog-events'
 import { JobRef } from '../domain-model/job-ref/job-ref'
 import { Refs } from "../domain-model/refs"
@@ -10,8 +9,6 @@ import { BuildConfig } from '../domain-model/system-config/build-config'
 import { DependencyRef } from "../domain-model/system-config/dependency-ref"
 import { RepositoryConfig } from '../domain-model/system-config/repository-config'
 import { Version } from "../domain-model/version"
-import { LocalGitCommands } from '../git/local-git-commands'
-import { LocalGitFactory, LocalGitLoadMode } from "../git/local-git-factory"
 import { createLogger, loggerName } from "../logging/logging-factory"
 import { RedisFactory } from "../redis/redis-factory"
 import { PublisherManager } from "../repositories/publisher/publisher-manager"
@@ -297,8 +294,8 @@ export class BuildSystemImpl implements BuildSystem.Service, Queue.Listener, Job
         console.log(`Received push: ${source} ${entity}`)
 
         const command = () => Promise.resolve().then(() => {
-            const sourceCacheOps = entity.ref instanceof Refs.BranchRef ? this.sourceCache.ensureEntity(source, entity, entity.ref.refSpec) : this.sourceCache.ensureRef(source, entity.ref, entity.ref.refSpec)
-            sourceCacheOps.then(() => {
+            const sourceCacheOps = entity.ref instanceof Refs.BranchRef ? () => this.sourceCache.ensureEntity(source, entity, entity.ref.refSpec) : () => this.sourceCache.ensureRef(source, entity.ref, entity.ref.refSpec)
+            return sourceCacheOps().then(() => {
                 const ref = entity.ref
                 const sha = entity.sha
                 return this.getBuildConfigIfActive(source, sha).then(buildConfig => {
@@ -338,7 +335,7 @@ export class BuildSystemImpl implements BuildSystem.Service, Queue.Listener, Job
                 })
             })
         })
-        command()
+        return command()
             .catch(e => {
                 logger.error(`Could not ensure: ${entity} on ${source}: ${e}`)
                 return this.sourceCache.fetchAllDefaults(source).then(() => {

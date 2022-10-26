@@ -1,8 +1,10 @@
 # One-build
 
-# Documentation
+# Other documentation
 
-[Integration](docs/integration.md)
+* [Common build ymls](docs/common-build-yml.md)
+* [Integration](docs/integration.md)
+
 
 # Development setup
 
