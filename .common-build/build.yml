@@ -1,31 +1,30 @@
-toolImage: artcsp-docker.ara-artifactory.volvocars.biz/vcc/common-build-agent:0.13.0
 version: 1
+toolImage: artcsp-docker.ara-artifactory.volvocars.biz/vcc/common-build-agent:0.19.0
 build:
   steps:
     - type: compose
       nodes:
         dev:
-          image: artcsp-docker.ara-artifactory.volvocars.biz/vcc/common-build-dev:0.7.0
           dependsOn:
             - redis
+          image: artcsp-docker.ara-artifactory.volvocars.biz/vcc/common-build-dev:0.7.0
           internalPorts: []
-          startCmd: null
         redis:
-          image: redis:6.2-alpine
           dependsOn: []
+          image: redis:6.2-alpine
           internalPorts:
             - 6379
-          startCmd: null
       commands:
-        - cmd: npm --prefix backend install && npm --prefix backend run test && npm --prefix backend run build 
+        - cmd: npm --prefix backend install && npm --prefix backend run test && npm
+            --prefix backend run build
           node: dev
-        - cmd: npm --prefix frontend install && npm --prefix frontend run build 
+        - cmd: npm --prefix frontend install && npm --prefix frontend run build
           node: dev
-    - type: build
-      name: vcc/common-build-backend
+    - name: vcc/common-build-backend
+      type: build
       file: docker/Dockerfile
       target: backend
-    - type: build
-      name: vcc/common-build-frontend
+    - name: vcc/common-build-frontend
+      type: build
       file: docker/Dockerfile
       target: frontend
