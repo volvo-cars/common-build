@@ -20,6 +20,7 @@ import { DependencyLookup } from '../repositories/scanner/dependency-lookup'
 import { BuildYamlScanner } from '../repositories/scanner/providers/build-yaml-scanner-provider'
 import { ScannerManager } from "../repositories/scanner/scanner-manager"
 import { SystemFilesAccess } from "../repositories/system-files-access"
+import { ActionCalculator } from './action-calculator'
 import { BuildSystem, Update } from './build-system'
 import { JobExecutor } from './job-executor/job-executor'
 import { ActiveRepositories } from "./queue/active-repositories"
@@ -147,20 +148,10 @@ export class BuildSystemImpl implements BuildSystem.Service, Queue.Listener, Job
                         await this.publisherManager.addMetaData(job.source, ref.sha, publications)
                         const repositoryAccess = this.repositoryAcccessFactory.createAccess(job.source.id)
                         await repositoryAccess.setValidBuild(job.source.id, ref.updateId, ref.sha)
-                        const action = repositoryConfig.buildAutomation.default
                         return this.repositoryAcccessFactory.createAccess(job.source.id).getLabels(ref.updateId).then(updateLabels => {
-                            const validUpdateLabels = updateLabels || []
-                            const labelActions = repositoryConfig.buildAutomation.labels
-                            const allActions: RepositoryConfig.Action[] = []
-                            if (labelActions.find(la => { return la.id === BuildYamlScanner.DEFAULT_TOOL_LABEL })) {
-                                allActions.push(RepositoryConfig.Action.Merge)
-                            }
-                            labelActions.forEach(la => {
-                                allActions.push(la.action)
-                            })
-                            const actionByLabel: RepositoryConfig.Action | undefined = allActions.includes(RepositoryConfig.Action.Release) ? RepositoryConfig.Action.Release : (allActions.includes(RepositoryConfig.Action.Merge) ? RepositoryConfig.Action.Merge : undefined)
-                            const action = actionByLabel || repositoryConfig.buildAutomation.default
-                            logger.debug(`Job successful action: ${action} for ${actionByLabel || "default"} ${job} in update-labels:${validUpdateLabels.join(",")}`)
+                            const calculatedAction = ActionCalculator.calculateAction(updateLabels || [], repositoryConfig.buildAutomation.labels)
+                            const action = calculatedAction || repositoryConfig.buildAutomation.default
+                            logger.debug(`Job successful action: ${action} (calculated ${calculatedAction}) in ${job} in update-labels:${(updateLabels || []).join(",")}`)
                             if (action === RepositoryConfig.Action.Merge || action === RepositoryConfig.Action.Release) {
                                 repositoryAccess.merge(job.source.path, ref.updateId)
                                     .then(async updatedBranch => {
