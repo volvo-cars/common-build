@@ -17,7 +17,7 @@ export class MockScannerManager implements ScannerManager.Service {
     processBySource(...sources: RepositorySource[]): Promise<(Error | ScannerManager.ProcessResult)[]> {
         throw new Error("Method not implemented.");
     }
-    processByReferences(...refs: DependencyRef.Ref[]): Promise<(Error | ScannerManager.ProcessResult)[]> {
+    processByReferences(filter: ScannerManager.ProcessFilter, ...refs: DependencyRef.Ref[]): Promise<(Error | ScannerManager.ProcessResult)[]> {
         throw new Error("Method not implemented.");
     }
     registerDependencies(source: RepositorySource): Promise<void> {

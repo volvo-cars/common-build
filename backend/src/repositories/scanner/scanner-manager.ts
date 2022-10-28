@@ -15,8 +15,12 @@ export namespace ScannerManager {
          */
         getDependencyGraph(source: RepositorySource, sha: Refs.ShaRef): Promise<DependencyGraph>
         processBySource(...sources: RepositorySource[]): Promise<(ProcessResult | Error)[]>
-        processByReferences(...refs: DependencyRef.Ref[]): Promise<(ProcessResult | Error)[]>
+        processByReferences(filter: ProcessFilter, ...refs: DependencyRef.Ref[]): Promise<(ProcessResult | Error)[]>
         registerDependencies(source: RepositorySource): Promise<void>
+    }
+
+    export interface ProcessFilter {
+        include(source: RepositorySource): boolean
     }
 
     export abstract class ProcessResult { }

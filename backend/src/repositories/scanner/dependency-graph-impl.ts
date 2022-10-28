@@ -3,6 +3,9 @@ import { DependencyRef } from "../../domain-model/system-config/dependency-ref";
 import _ from "lodash"
 import { ScannerManager } from "./scanner-manager";
 import { GraphTree } from "./scanner-manager-impl";
+import { BuildYamlScanner } from "./providers/build-yaml-scanner-provider";
+
+
 export class DependencyGraphImpl implements ScannerManager.DependencyGraph {
     constructor(private graphs: GraphTree[]) { }
     getProblems(): ScannerManager.DependencyProblem[] {
@@ -19,12 +22,11 @@ export class DependencyGraphImpl implements ScannerManager.DependencyGraph {
             traverseGraph(graph)
         })
         const allProblems: ScannerManager.DependencyProblem[] = []
-        const commonBuildRef = new DependencyRef.ImageRef("artcsp-docker.ara-artifactory.volvocars.biz", "vcc/common-build-agent")
         for (let [serializedRef, serializedVersions] of allVersionsByRef) {
             const uniqueVersions = _.uniq(serializedVersions)
             if (uniqueVersions.length > 1) {
                 const ref = DependencyRef.deserialize(serializedRef)
-                if (!ref.equals(commonBuildRef)) {
+                if (!ref.equals(BuildYamlScanner.TOOL_IMAGE)) {
                     const versions = uniqueVersions.map(v => { return Version.create(v) })
                     allProblems.push(new ScannerManager.MultipleVersionsProblem(ref, versions))
                 }

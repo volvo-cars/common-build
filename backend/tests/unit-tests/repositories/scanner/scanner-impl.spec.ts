@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@jest/globals'
 import { DependencyRef } from "../../../../src/domain-model/system-config/dependency-ref"
-import { DependenciesYamlScannerProvider } from '../../../../src/repositories/scanner/providers/dependencies-yaml-scanner-provider'
+import { DependenciesYamlScanner } from '../../../../src/repositories/scanner/providers/dependencies-yaml-scanner-provider'
 import { SystemFilesAccessImpl } from '../../../../src/repositories/system-files-access-impl'
 import { MockRepositoryAccessFactory } from "../../../helpers/mock-repository-access-factory"
 
@@ -9,8 +9,8 @@ import { RepositorySource } from '../../../../src/domain-model/repository-model/
 import { BuildConfig } from '../../../../src/domain-model/system-config/build-config'
 import { DependenciesConfig } from '../../../../src/domain-model/system-config/dependencies-config'
 import { ServiceConfig } from '../../../../src/domain-model/system-config/service-config'
-import { BuildYamlScannerProvider } from '../../../../src/repositories/scanner/providers/build-yaml-scanner-provider'
-import { GoogleRepoScannerProvider } from '../../../../src/repositories/scanner/providers/google-repo-scanner-provider'
+import { BuildYamlScanner } from '../../../../src/repositories/scanner/providers/build-yaml-scanner-provider'
+import { GoogleRepoScanner } from '../../../../src/repositories/scanner/providers/google-repo-scanner-provider'
 import { ScannerImpl } from '../../../../src/repositories/scanner/scanner-impl'
 import { TestUtils } from '../../../helpers/test-utils'
 describe("Test DependenciesYaml provider", () => {
@@ -29,9 +29,9 @@ describe("Test DependenciesYaml provider", () => {
             new ServiceConfig.GerritSourceService("csp-gerrit", "csp-gerrit-ssh.volvocars.net", "csp-gerrit.volvocars.biz", undefined)
         ]
 
-        const dependenciesYmlProvider = new DependenciesYamlScannerProvider(systemFilesAccess)
-        const buildYmlProvider = new BuildYamlScannerProvider(systemFilesAccess)
-        const googleProvider = new GoogleRepoScannerProvider(repositoryAccessFactory, sourceServices)
+        const dependenciesYmlProvider = new DependenciesYamlScanner.Provider(systemFilesAccess)
+        const buildYmlProvider = new BuildYamlScanner.Provider(systemFilesAccess)
+        const googleProvider = new GoogleRepoScanner.Provider(repositoryAccessFactory, sourceServices)
 
         const scanner = new ScannerImpl([buildYmlProvider, dependenciesYmlProvider, googleProvider])
         const dependenciesMap = await scanner.getDependencies(fakeSource, TestUtils.sha("0"))

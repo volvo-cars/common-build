@@ -17,6 +17,7 @@ import { NormalizedModel, NormalizedModelUtil } from "../repositories/repository
 import { VersionType } from "../repositories/repository/repository"
 import { RepositoryFactory } from "../repositories/repository/repository-factory"
 import { DependencyLookup } from '../repositories/scanner/dependency-lookup'
+import { BuildYamlScanner } from '../repositories/scanner/providers/build-yaml-scanner-provider'
 import { ScannerManager } from "../repositories/scanner/scanner-manager"
 import { SystemFilesAccess } from "../repositories/system-files-access"
 import { BuildSystem, Update } from './build-system'
@@ -102,21 +103,31 @@ export class BuildSystemImpl implements BuildSystem.Service, Queue.Listener, Job
                             logger.debug(`Fast-forward possible for ${ref} in ${source}. Continue build start.`)
                             const dependencyGraph = await this.scannerManager.getDependencyGraph(source, ref.sha)
                             const dependencyProblems = dependencyGraph.getProblems()
-                            const dependencyTreeLog = [`***************** Dependency tree for ${source}/${ref}`]
+                            const dependencyTreeLog: string[] = []
                             dependencyGraph.traverse((ref: DependencyRef.Ref, version: Version, depth: number) => {
-                                dependencyTreeLog.push(`${_.repeat(" ", depth * 3)} ${ref.toString()}: ${version.asString()}`)
+                                dependencyTreeLog.push(`${_.repeat(" ", depth * 2)}* ${ref.toString()}: ${version.asString()}`)
                             })
-                            dependencyTreeLog.push(`***************** Problem count: ${dependencyProblems.length}`)
+                            const dependencyTreeString = dependencyTreeLog.join("\n")
+                            console.log(`***************** Dependency tree for ${source}/${ref}`)
+                            console.log(dependencyTreeString)
+                            console.log(`***************** Problem count: ${dependencyProblems.length}`)
+                            this.buildLogService.add(`Dependency tree:\n\n${dependencyTreeString}`, BuildLogEvents.Level.INFO, source, ref.canonicalId)
+
+                            //Diamond problem failure commented out. Needs to be defined on per/project basis.
+                            /*                            if (dependencyProblems.length) {
+                                                            console.log(`**** Dependendency problems with ${source}/${ref}: ${dependencyProblems.map(p => { return p.message }).join(", ")}. Signalling dependency issue to queue.`)
+                                                            this.updateQueue(job, Queue.State.DEPENDENCY)
+                                                            this.buildLogService.add(`Build was aborted due to dependency inbalances: \n ${dependencyProblems.map(p => { return `* ${p.message}` }).join("\n")}`, BuildLogEvents.Level.WARNING, source, ref.canonicalId)
+                                                        } else {
+                                                            this.jobExecutor.startJob(job)
+                                                       }
+                                                        */
                             if (dependencyProblems.length) {
-                                dependencyTreeLog.push(`Dependendency problems with ${source}/${ref}: ${dependencyProblems.map(p => { return p.message }).join(", ")}. Signalling dependency issue to queue.`)
+                                console.log(`**** Dependendency problems with ${source}/${ref}: ${dependencyProblems.map(p => { return p.message }).join(", ")}. Diamond problem guard inactive. Will let pass.`)
+                                this.buildLogService.add(`Diamon problem guard inactivated by platform.\n\nInformation: \n ${dependencyProblems.map(p => { return `* ${p.message}` }).join("\n")}`, BuildLogEvents.Level.WARNING, source, ref.canonicalId)
                             }
-                            console.log(dependencyTreeLog.join("\n"))
-                            if (dependencyProblems.length) {
-                                this.updateQueue(job, Queue.State.DEPENDENCY)
-                                this.buildLogService.add(`Build was aborted due to dependency inbalances: \n ${dependencyProblems.map(p => { return `* ${p.message}` }).join("\n")}`, BuildLogEvents.Level.WARNING, source, ref.canonicalId)
-                            } else {
-                                this.jobExecutor.startJob(job)
-                            }
+                            this.jobExecutor.startJob(job)
+
                         }
                     })
                     .catch(error => {
@@ -140,9 +151,16 @@ export class BuildSystemImpl implements BuildSystem.Service, Queue.Listener, Job
                         return this.repositoryAcccessFactory.createAccess(job.source.id).getLabels(ref.updateId).then(updateLabels => {
                             const validUpdateLabels = updateLabels || []
                             const labelActions = repositoryConfig.buildAutomation.labels
-                            const matchingLabelAction = labelActions.find(la => { return _.includes(validUpdateLabels, la.id) })
-                            const action = matchingLabelAction ? matchingLabelAction.action : repositoryConfig.buildAutomation.default
-                            logger.debug(`Job successful action: ${action} for ${matchingLabelAction?.id || "default"} ${job} in update-labels:${validUpdateLabels.join(",")}`)
+                            const allActions: RepositoryConfig.Action[] = []
+                            if (labelActions.find(la => { return la.id === BuildYamlScanner.DEFAULT_TOOL_LABEL })) {
+                                allActions.push(RepositoryConfig.Action.Merge)
+                            }
+                            labelActions.forEach(la => {
+                                allActions.push(la.action)
+                            })
+                            const actionByLabel: RepositoryConfig.Action | undefined = allActions.includes(RepositoryConfig.Action.Release) ? RepositoryConfig.Action.Release : (allActions.includes(RepositoryConfig.Action.Merge) ? RepositoryConfig.Action.Merge : undefined)
+                            const action = actionByLabel || repositoryConfig.buildAutomation.default
+                            logger.debug(`Job successful action: ${action} for ${actionByLabel || "default"} ${job} in update-labels:${validUpdateLabels.join(",")}`)
                             if (action === RepositoryConfig.Action.Merge || action === RepositoryConfig.Action.Release) {
                                 repositoryAccess.merge(job.source.path, ref.updateId)
                                     .then(async updatedBranch => {
@@ -313,7 +331,10 @@ export class BuildSystemImpl implements BuildSystem.Service, Queue.Listener, Job
                                         return this.publisherManager.publications(source, ref).then(publications => {
                                             const releasePublications = [new DependencyRef.GitRef(source), publications].flat()
                                             this.dependencyLookupCache.invalidate(...releasePublications).then(() => {
-                                                return this.scannerManager.processByReferences(...releasePublications)
+                                                const filter = {
+                                                    include: (processRepository: RepositorySource) => { return !processRepository.equals(source) } //To avoid cyclic triggers
+                                                }
+                                                return this.scannerManager.processByReferences(filter, ...releasePublications)
                                             })
                                         })
                                     }

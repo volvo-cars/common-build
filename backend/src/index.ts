@@ -29,9 +29,9 @@ import { RepositoryAccessFactoryImpl } from './repositories/repository-access/re
 import { RepositoryFactoryImpl } from './repositories/repository/repository-factory'
 import { DependencyLookupCacheImpl } from './repositories/scanner/dependency-lookup-cache-impl'
 import { DependencyLookupFactoryImpl } from './repositories/scanner/dependency-lookup-factory-impl'
-import { BuildYamlScannerProvider } from './repositories/scanner/providers/build-yaml-scanner-provider'
-import { DependenciesYamlScannerProvider } from './repositories/scanner/providers/dependencies-yaml-scanner-provider'
-import { GoogleRepoScannerProvider } from './repositories/scanner/providers/google-repo-scanner-provider'
+import { BuildYamlScanner } from './repositories/scanner/providers/build-yaml-scanner-provider'
+import { DependenciesYamlScanner } from './repositories/scanner/providers/dependencies-yaml-scanner-provider'
+import { GoogleRepoScanner } from './repositories/scanner/providers/google-repo-scanner-provider'
 import { ScannerImpl } from './repositories/scanner/scanner-impl'
 import { ScannerManagerImpl } from './repositories/scanner/scanner-manager-impl'
 import { SystemFilesAccessImpl } from './repositories/system-files-access-impl'
@@ -161,7 +161,7 @@ createConfig(args.config, [new VaultValueSubstitutor(vaultService), new FileValu
     const majorService = new MajorsServiceImpl(config.majors, redisFactory, repositoryAccessFactory)
     const majorApplicationService = new MajorApplicationServiceImpl(repositoryFactory, repositoryAccessFactory)
     const dependencyStorage = new DependencyStoragImpl(redisFactory)
-    const scanner = new ScannerImpl([new GoogleRepoScannerProvider(repositoryAccessFactory, config.services.sources), new DependenciesYamlScannerProvider(systemFilesAccess), new BuildYamlScannerProvider(systemFilesAccess)])
+    const scanner = new ScannerImpl([new GoogleRepoScanner.Provider(repositoryAccessFactory, config.services.sources), new DependenciesYamlScanner.Provider(systemFilesAccess), new BuildYamlScanner.Provider(systemFilesAccess)])
     const dependencyLookupCache = new DependencyLookupCacheImpl(repositoryFactory, artifactoryFactory, dockerRegistryFactory, redisFactory)
     const dependencyLookupFactory = new DependencyLookupFactoryImpl(dependencyLookupCache, systemFilesAccess)
     const scannerManager = new ScannerManagerImpl(repositoryAccessFactory, repositoryFactory, activeRepositories, scanner, dependencyStorage, dependencyLookupFactory, redisFactory, artifactoryFactory, activeSystem, majorService, systemFilesAccess, sourceCache)

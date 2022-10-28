@@ -6,6 +6,7 @@ build:
       nodes:
         download:
           image: artcsp-docker.ara-artifactory.volvocars.biz/vcc/common-build-tools/download-manifest-files:0.2.0
+          labels: download-label
       secrets:
         ara-artifactory.volvocars.biz: csp/common-build/https-ara-artifactory.volvocars.biz
       commands:

@@ -7,7 +7,7 @@ import { ServiceConfig } from '../../../../../src/domain-model/system-config/ser
 import { Version } from "../../../../../src/domain-model/version"
 import { DependencyLookup } from '../../../../../src/repositories/scanner/dependency-lookup'
 import { LabelCriteria } from "../../../../../src/repositories/scanner/label-criteria"
-import { GoogleRepoScannerProvider } from "../../../../../src/repositories/scanner/providers/google-repo-scanner-provider"
+import { GoogleRepoScanner } from "../../../../../src/repositories/scanner/providers/google-repo-scanner-provider"
 import { Scanner } from '../../../../../src/repositories/scanner/scanner'
 import { MockRepositoryAccessFactory } from "../../../../helpers/mock-repository-access-factory"
 import { DEFAULT_XML } from '../../../../helpers/test-data'
@@ -31,7 +31,7 @@ describe("Test DefaultXml provider", () => {
     ]
 
     it("Make sure order is kept", async () => {
-        const provider = new GoogleRepoScannerProvider(repositoryAccess, sources)
+        const provider = new GoogleRepoScanner.Provider(repositoryAccess, sources)
         const result = await provider.scan(fakeSource, dummySha, <DependencyLookup.Provider>{
             getVersion: (ref: DependencyRef.Ref, current: Version): Promise<Version> => {
                 if (ref instanceof DependencyRef.GitRef) {
@@ -70,7 +70,7 @@ describe("Test DefaultXml provider", () => {
     })
 
     it("Extract dependencies", async () => {
-        const provider = new GoogleRepoScannerProvider(repositoryAccess, sources)
+        const provider = new GoogleRepoScanner.Provider(repositoryAccess, sources)
         const dependencies = await provider.getDependencies(fakeSource, dummySha)
         expect(dependencies.length).toBe(3)
         expect(dependencies).toEqual([

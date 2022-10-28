@@ -3,7 +3,7 @@ import { Version } from "../../../../../src/domain-model/version"
 import { DependencyLookup } from '../../../../../src/repositories/scanner/dependency-lookup'
 import { DependencyRef } from "../../../../../src/domain-model/system-config/dependency-ref"
 import { LabelCriteria } from "../../../../../src/repositories/scanner/label-criteria"
-import { DependenciesYamlScannerProvider } from '../../../../../src/repositories/scanner/providers/dependencies-yaml-scanner-provider'
+import { DependenciesYamlScanner } from '../../../../../src/repositories/scanner/providers/dependencies-yaml-scanner-provider'
 import { SystemFilesAccessImpl } from '../../../../../src/repositories/system-files-access-impl'
 import { MockRepositoryAccessFactory } from "../../../../helpers/mock-repository-access-factory"
 import { DEPENDENCIES_YAML } from '../../../../helpers/test-data'
@@ -24,7 +24,7 @@ describe("Test DependenciesYaml provider", () => {
 
     const dummySha = Refs.ShaRef.create(_.repeat("0", 40))
     it("Make sure order is kept", async () => {
-        const provider = new DependenciesYamlScannerProvider(new SystemFilesAccessImpl(repositoryAccessFactory))
+        const provider = new DependenciesYamlScanner.Provider(new SystemFilesAccessImpl(repositoryAccessFactory))
         const result = await provider.scan(fakeSource, dummySha, <DependencyLookup.Provider>{
             getVersion: (ref: DependencyRef.Ref, current: Version): Promise<Version> => {
                 if (ref instanceof DependencyRef.ArtifactRef) {
@@ -80,7 +80,7 @@ describe("Test DependenciesYaml provider", () => {
     })
 
     it("Extract dependencies", async () => {
-        const provider = new DependenciesYamlScannerProvider(new SystemFilesAccessImpl(repositoryAccessFactory))
+        const provider = new DependenciesYamlScanner.Provider(new SystemFilesAccessImpl(repositoryAccessFactory))
         const dependencies = await provider.getDependencies(fakeSource, dummySha)
         expect(dependencies.length).toBe(3)
         expect(dependencies).toEqual([

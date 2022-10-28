@@ -97,8 +97,9 @@ export class ScannerManagerImpl implements ScannerManager.Service {
         })
     }
 
-    processByReferences(...refs: DependencyRef.Ref[]): Promise<ScannerManager.ProcessResult[]> {
-        return this.dependencyStorage.lookup(...refs).then(repositories => {
+    processByReferences(filter: ScannerManager.ProcessFilter, ...refs: DependencyRef.Ref[]): Promise<ScannerManager.ProcessResult[]> {
+        return this.dependencyStorage.lookup(...refs).then(allRepositories => {
+            const repositories = allRepositories.filter(r => { return filter.include(r) })
             logger.debug(`Processing dependent repos [${repositories.join(",")}] for references ${refs.map(r => { return r.toString() }).join(", ")} `)
             return this.processBySource(...repositories)
         })

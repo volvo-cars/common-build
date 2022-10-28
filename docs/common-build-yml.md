@@ -132,4 +132,44 @@ COPY build /app
 RUN --mount=type=secret,id=mySecret echo /run/secrets/mySecret
 ```
 
+# Using labels
 
+Labels can be used to group dependency updates into different Updates (Gerrit Changes). All dependencies for a given `label` will be updated in change with the hashtag with the value of the label. Labels can be attached different `merge/release/nothing` behavior in your Repositories config via the CB-ui.
+
+**Note:** The default label for all docker image references in `build.yml` is `building-tools` with the default action of `merge`.
+
+Multiple labels can be defined for a dependency. When giving multiple labels the dependency update with appear in multiple changes with the corresponding label names.
+
+## Using labels in `compose` build step.
+
+Ex: 
+```yml
+toolImage: artcsp-docker.ara-artifactory.volvocars.biz/vcc/common-build-agent:0.17.0
+version: 1
+build:
+  steps:
+    - type: compose
+      nodes:
+        ubuntu1:
+          image: vcc/volvo-image:10.0.0
+          labels: internal-volvo
+      commands:
+        - cmd: | 
+            export SECRET=$(cat /run/secrets/secretA)
+            echo The secret value $SECRET
+```
+Will put the `vcc/volvo-image` update in its own Change tagged `internal-volvo`. 
+
+## Using labels in `build` build step.
+
+```yml
+toolImage: artcsp-docker.ara-artifactory.volvocars.biz/vcc/common-build-agent:0.17.0
+version: 1
+build:
+  steps:
+    - type: build
+      name: my-org/my-docker-image
+      file: docker/Dockerfile
+      labels: internal-volvo
+```
+Dependency update is based on the `FROM <image>` in the docker file.
