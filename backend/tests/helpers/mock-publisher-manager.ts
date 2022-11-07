@@ -6,7 +6,7 @@ import { DependencyRef } from "../../src/domain-model/system-config/dependency-r
 
 export class MockPublisherManager implements PublisherManager {
     constructor() { }
-    addMetaData(source: RepositorySource, sha: Refs.ShaRef, refs: DependencyRef.Ref[]): Promise<void> {
+    addMetaData(source: RepositorySource, sha: Refs.ShaRef): Promise<void> {
         return Promise.resolve()
     }
     publications(source: RepositorySource, sha: Refs.ShaRef): Promise<DependencyRef.Ref[]> {

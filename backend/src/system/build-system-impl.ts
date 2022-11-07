@@ -106,7 +106,7 @@ export class BuildSystemImpl implements BuildSystem.Service, Queue.Listener, Job
                             const dependencyProblems = dependencyGraph.getProblems()
                             const dependencyTreeLog: string[] = []
                             dependencyGraph.traverse((ref: DependencyRef.Ref, version: Version, depth: number) => {
-                                dependencyTreeLog.push(`${_.repeat(" ", depth * 2)}* ${ref.toString()}: ${version.asString()}`)
+                                dependencyTreeLog.push(`${_.repeat(" ", (depth + 1) * 2)}* ${ref.toString()}: ${version.asString()}`)
                             })
                             const dependencyTreeString = dependencyTreeLog.join("\n")
                             console.log(`***************** Dependency tree for ${source}/${ref}`)
@@ -125,7 +125,7 @@ export class BuildSystemImpl implements BuildSystem.Service, Queue.Listener, Job
                                                         */
                             if (dependencyProblems.length) {
                                 console.log(`**** Dependendency problems with ${source}/${ref}: ${dependencyProblems.map(p => { return p.message }).join(", ")}. Diamond problem guard inactive. Will let pass.`)
-                                this.buildLogService.add(`Diamon problem guard inactivated by platform.\n\nInformation: \n ${dependencyProblems.map(p => { return `* ${p.message}` }).join("\n")}`, BuildLogEvents.Level.WARNING, source, ref.canonicalId)
+                                this.buildLogService.add(`Diamond problem guard inactivated by platform.\n\nInformation: \n ${dependencyProblems.map(p => { return `* ${p.message}` }).join("\n")}`, BuildLogEvents.Level.WARNING, source, ref.canonicalId)
                             }
                             this.jobExecutor.startJob(job)
 
@@ -144,8 +144,7 @@ export class BuildSystemImpl implements BuildSystem.Service, Queue.Listener, Job
                 this.systemFilesAccess.getRepositoryConfig(job.source).then(async repositoryConfig => {
                     if (repositoryConfig) {
                         //TODO: Check labels on RepositoryConfig to get the correct action.
-                        const publications = <DependencyRef.ArtifactRef[]>(await this.publisherManager.publications(job.source, ref.sha))
-                        await this.publisherManager.addMetaData(job.source, ref.sha, publications)
+                        await this.publisherManager.addMetaData(job.source, ref.sha)
                         const repositoryAccess = this.repositoryAcccessFactory.createAccess(job.source.id)
                         await repositoryAccess.setValidBuild(job.source.id, ref.updateId, ref.sha)
                         return this.repositoryAcccessFactory.createAccess(job.source.id).getLabels(ref.updateId).then(updateLabels => {

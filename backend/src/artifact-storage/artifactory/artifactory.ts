@@ -53,7 +53,7 @@ export class ArtifactoryImpl implements Artifactory {
         if (keys.length) {
             return this.createHeaders().then(headers => {
                 const propertiesArray = keys.reduce((acc: string[], nextKey) => {
-                    acc.push(`${nextKey}=${properties[nextKey]}`)
+                    acc.push(`${nextKey}=${encodeURIComponent(properties[nextKey])}`)
                     return acc
                 }, [])
                 const url = `https://${this.host}/artifactory/api/storage/${repository}/${path}/${name}?properties=${propertiesArray.join(";")}&recursive=1`

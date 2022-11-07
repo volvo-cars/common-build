@@ -69,6 +69,25 @@ The filename will default to the matched filename if a single pattern is used. O
 
 The optional attribe `qualifier.name` can be used to rename the file to whatever you feel is suitable.
 
+## Publishing artifacts with properties
+Common Build supports adding properties to published artifacts. Properties are stored as native Artifactory properties on *folder-level*.
+
+```yml
+artifacts:
+  remote: ara-artifactory.volvocars.biz
+  repository: ARTCSP-CI
+  items:
+    - path: playground/my-test
+      properties: 
+         myProperty1: value1
+         property2: value2
+      qualifiers:
+        - src: README.md
+        - src: some-folder/*.txt 
+          name: my-text-files.tar.gz
+```
+
+
 ## Publishing docker-images
 
 ```yml

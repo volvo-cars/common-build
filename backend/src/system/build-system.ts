@@ -1,7 +1,6 @@
 import { Refs } from "../domain-model/refs"
 import { RepositorySource } from '../domain-model/repository-model/repository-source'
 import { Version } from "../domain-model/version"
-import { LocalGitCommands } from "../git/local-git-commands"
 import { VersionType } from "../repositories/repository/repository"
 import { JobExecutor } from './job-executor/job-executor'
 import { Queue } from './queue/queue'
