@@ -66,7 +66,7 @@ export class MajorsServiceImpl implements MajorsService {
                         series.push(new Majors.Serie(value.id, [value.value]))
                     }
                     const access = this.repositoryAccessFactory.createAccess(this.config.source.id)
-                    return access.updateBranch(this.config.source.path, Refs.BranchRef.create("refs/heads/master"), [{
+                    return access.updateBranch(this.config.source.path, Refs.BranchRef.create("master"), [{
                         data: JSON.stringify(Codec.toPlain(series), null, 2),
                         path: MajorsServiceImpl.STATE_FILE
                     }]).then(() => {
