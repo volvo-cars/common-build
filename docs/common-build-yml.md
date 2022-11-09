@@ -87,7 +87,6 @@ artifacts:
           name: my-text-files.tar.gz
 ```
 
-
 ## Publishing docker-images
 
 ```yml
@@ -99,6 +98,27 @@ images:
 ```
 Built images only exist in the local daemon until they are published. Publish your built docker image by adding it to the `images` section of the `publish.yml` file. 
 
+# Consuming artifacts 
+Artifacts as dependencies are defined in `.common-build/dependencies.yml`. All dependencies are downloaded before build is started.
+
+```yaml
+version: 1
+artifacts:
+  logFile: output/logfile.yml # Optional. Will create file with download informations such as sha and properties for all downloaded files.
+  remote: ara-artifactory.volvocars.biz
+  repository: ARTCSP-CI
+  toDir: external-dependencies
+  items:
+    - path: common-build/test/cynosure_b
+      toDir: some-folder # Optional will be appended.
+      revision: 35.144.0
+      files:
+        - name: README.md
+    - path: common-build/test/cynosure_c
+      revision: 35.165.0
+      files:
+        - name: README.md
+```
 
 # Using secrets
 
@@ -192,3 +212,4 @@ build:
       labels: internal-volvo
 ```
 Dependency update is based on the `FROM <image>` in the docker file.
+
