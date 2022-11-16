@@ -3,3 +3,10 @@ images:
   items:
     - name: vcc/common-build-backend
     - name: vcc/common-build-frontend
+artifacts:
+  remote: ara-artifactory.volvocars.biz
+  repository: ARTCSP-CI
+  items:
+    - path: common-build/docs
+      qualifiers:
+        - src: docs/**
